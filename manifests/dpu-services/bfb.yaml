@@ -1,0 +1,12 @@
+apiVersion: provisioning.dpu.nvidia.com/v1alpha1
+kind: BFB
+metadata:
+  name: bf-bundle
+  namespace: dpf-operator-system
+spec:
+  url: ${BFB_URL}
+  versions:
+    atf: ${BFB_ATF}
+    bsp: ${BFB_BSP}
+    doca: ${BFB_DOCA}
+    uefi: ${BFB_UEFI}

@@ -1,0 +1,12 @@
+apiVersion: metallb.io/v1beta1
+kind: MetalLB
+metadata:
+  name: metallb
+  namespace: openshift-operators
+spec:
+  nodeSelector:
+    node-role.kubernetes.io/control-plane: ""
+  speakerTolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule

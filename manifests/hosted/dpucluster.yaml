@@ -1,0 +1,8 @@
+apiVersion: provisioning.dpu.nvidia.com/v1alpha1
+kind: DPUCluster
+metadata:
+  name: ${HOSTED_CLUSTER_NAME}
+  namespace: dpf-operator-system
+spec:
+  type: static
+  maxNodes: 10

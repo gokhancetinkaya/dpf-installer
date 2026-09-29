@@ -1,0 +1,10 @@
+apiVersion: svc.dpu.nvidia.com/v1alpha1
+kind: DPUServiceNAD
+metadata:
+  name: mybrhbn
+  namespace: dpf-operator-system
+spec:
+  resourceType: sf
+  ipam: false
+  bridge: "br-hbn"
+  serviceMTU: ${NODES_MTU}

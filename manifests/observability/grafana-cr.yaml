@@ -1,0 +1,37 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: Grafana
+metadata:
+  name: dpf-grafana
+  namespace: dpf-operator-system
+  labels:
+    dashboards: "dpf-grafana"
+spec:
+  route:
+    spec:
+      port:
+        targetPort: grafana
+      tls:
+        termination: edge
+  config:
+    log:
+      mode: "console"
+      level: "info"
+    auth.anonymous:
+      enabled: "true"
+      org_role: "Viewer"
+    security:
+      admin_user: "admin"
+      admin_password: "admin"
+  deployment:
+    spec:
+      template:
+        spec:
+          nodeSelector:
+            node-role.kubernetes.io/control-plane: ""
+          tolerations:
+          - key: node-role.kubernetes.io/master
+            operator: Exists
+            effect: NoSchedule
+          - key: node-role.kubernetes.io/control-plane
+            operator: Exists
+            effect: NoSchedule
