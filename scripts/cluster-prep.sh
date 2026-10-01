@@ -14,7 +14,9 @@ apply_manifest "$(manifest cluster-prep/argocd-instance.yaml)"
 wait_rollout dpf-operator-system argocd-redis "$WAIT_MEDIUM"
 
 log "Enabling global IP forwarding on the OVN-Kubernetes network"
-oc patch network.operator.openshift.io cluster --type=merge --patch \
+# @code-as-a-doc: start section "ip-forwarding-patch" | doc strip-line-prefix: "$ "
+oc patch network.operator.openshift.io cluster --type=merge -p \
   '{"spec":{"defaultNetwork":{"ovnKubernetesConfig":{"gatewayConfig":{"ipForwarding":"Global"}}}}}'
+# @code-as-a-doc: end section "ip-forwarding-patch"
 oc get network.operator cluster -o jsonpath='{.spec.defaultNetwork.ovnKubernetesConfig.gatewayConfig.ipForwarding}{"\n"}'
 log "Cluster prep complete"

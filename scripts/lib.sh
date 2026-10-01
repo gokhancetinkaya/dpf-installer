@@ -501,16 +501,16 @@ new_ready_node() {
   return 1
 }
 
+# TODO: HUMAN-REVIEW-003 - Flagged for human review priority 5, see .asadoc/human-review/05-HUMAN-REVIEW-003.md
 apply_secret() {
-  local ns="$1"
-  shift
-  oc create secret "$@" -n "$ns" --dry-run=client -o yaml | oc apply -f -
+  oc create secret "$@" --dry-run=client -o yaml | oc apply -f -
 }
 
 # Helm 4 server-side apply conflicts with another field manager, for example
 # worker-dpu spec.paused. --force-conflicts keeps the chart's value on re-run.
+# TODO: HUMAN-REVIEW-003 - Flagged for human review priority 5, see .asadoc/human-review/05-HUMAN-REVIEW-003.md
 helm_upgrade() {
-  local args=(upgrade --install)
+  local args=(upgrade --install --timeout "$HELM_TIMEOUT")
   if helm upgrade --help 2>/dev/null | grep -q -- '--force-conflicts'; then
     args+=(--force-conflicts)
   fi

@@ -96,3 +96,13 @@ Each phase can be run on its own, and each one is safe to re-run:
 - `generated/` is gitignored. Rendered manifests and other local output go there.
 
 `make render` writes the rendered manifests to `generated/manifests` without applying them.
+
+## Docs drift
+
+Much of this code is also in the OpenShift DPF docs. Lines marked with `# @code-as-a-doc:` comments are checked against the docs' code blocks by [asadoc](https://github.com/omertuc/asadoc), configured in `.asadoc/config.toml`. If you change marked code, run:
+
+```bash
+make check-doc-drift
+```
+
+`make browse-doc-drift` opens the same results in a web UI. CI runs the check on every pull request.

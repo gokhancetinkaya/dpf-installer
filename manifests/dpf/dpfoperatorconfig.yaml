@@ -1,3 +1,4 @@
+# @code-as-a-doc: file | param: "${*}"
 apiVersion: operator.dpu.nvidia.com/v1alpha1
 kind: DPFOperatorConfig
 metadata:
@@ -11,9 +12,9 @@ spec:
   cniInstaller:
     disable: true
   networking:
-    controlPlaneMTU: ${NODES_MTU}
-    highSpeedMTU: ${NODES_MTU}
-    dpuNodeOOBBridgeName: br-ex
+    controlPlaneMTU: ${NODES_MTU}      # management/OOB MTU (= NODES_MTU: 1500 standard, 9000 jumbo)
+    highSpeedMTU: ${NODES_MTU}         # high-speed fabric MTU (= NODES_MTU; must match controlPlaneMTU)
+    dpuNodeOOBBridgeName: br-ex      # OOB bridge for DPU provisioning; br-ex on OpenShift
   overrides:
     dpuCNIBinPath: /var/lib/cni/bin/
     dpuCNIPath: /run/multus/cni/net.d/

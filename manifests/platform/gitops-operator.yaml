@@ -1,3 +1,6 @@
+# @code-as-a-doc: file | param: "${*}"
+#   | remove-lines-starting-with: "startingCSV:"
+#   | TODO: "The code pins startingCSV to GITOPS_OPERATOR_CSV where the docs take the channel head; drop the pin from the code, or document it"
 apiVersion: v1
 kind: Namespace
 metadata:

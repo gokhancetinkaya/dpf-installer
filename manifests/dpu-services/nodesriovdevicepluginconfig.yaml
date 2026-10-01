@@ -1,3 +1,7 @@
+# @code-as-a-doc: file
+#   | remove-text: " # [^\n]*"
+#   | comment: "Drops the code's trailing comments, which the docs give as a list under the YAML"
+#   | TODO: "Put these comments in the docs' YAML (as the docs do for DPFOperatorConfig), or drop them from the code"
 apiVersion: noderesources.dpu.nvidia.com/v1alpha1
 kind: NodeSRIOVDevicePluginConfig
 metadata:

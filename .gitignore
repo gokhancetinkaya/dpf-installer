@@ -2,3 +2,6 @@
 generated/
 logs/
 *.kubeconfig
+
+# Automatically downloaded versioned utilities
+.bin/

@@ -14,15 +14,23 @@ require_cluster
 check_hypershift
 
 log "Installing dpf-hcp-provisioner ${DPF_HCP_PROVISIONER_VERSION}"
+# @code-as-a-doc: start section "dpf-hcp-provisioner-install"
+#   | remove-prefix: "helm_upgrade " | doc remove-prefix: "$ helm upgrade --install "
+#   | TODO: "helm_upgrade is helm upgrade --install plus --force-conflicts (Helm 4) and --timeout; an asadoc option that maps a code command to the doc's would replace both remove-prefix options"
+#   | remove-lines-starting-with: "--wait"
+#   | TODO: "The docs don't pass --wait, so the next step can run before the chart is ready; add --wait to the docs"
+#   | reindent: 2 -> 4
+#   | TODO: "The docs indent continuation lines by 4 here and by 2 in their maintenance-operator and injector commands; use 2 throughout the docs"
+#   | param: "\"$*\""
 helm_upgrade dpf-hcp-provisioner-operator \
   "$DPF_HCP_PROVISIONER_CHART" \
+  --wait \
   --registry-config "$OPENSHIFT_PULL_SECRET" \
   --version "$DPF_HCP_PROVISIONER_VERSION" \
   --namespace dpf-hcp-provisioner-system \
   --create-namespace \
-  --set provisionerConfig.manageDPUServiceTemplates=true \
-  --wait \
-  --timeout "$HELM_TIMEOUT"
+  --set provisionerConfig.manageDPUServiceTemplates=true
+# @code-as-a-doc: end section "dpf-hcp-provisioner-install"
 
 oc get pods -n dpf-hcp-provisioner-system
 oc get dpfhcpprovisionerconfigs.provisioning.dpu.hcp.io default -o yaml || true
@@ -35,11 +43,28 @@ metadata:
 EOF
 
 log "Creating pull-secret and SSH key secrets in ${CLUSTERS_NAMESPACE}"
-apply_secret "$CLUSTERS_NAMESPACE" generic "$PULL_SECRET_NAME" \
+# @code-as-a-doc: start section "hcp-pull-secret"
+#   | remove-prefix: "apply_secret " | doc remove-prefix: "$ oc create secret "
+#   | TODO: "apply_secret is oc create secret made rerunnable (--dry-run=client piped to oc apply); an asadoc option that maps a code command to the doc's would replace both remove-prefix options"
+#   | reindent: 2 -> 4
+#   | TODO: "The docs indent continuation lines by 4 here and by 2 in their maintenance-operator and injector commands; use 2 throughout the docs"
+#   | param: "\"$*\""
+apply_secret generic "$PULL_SECRET_NAME" \
   --from-file=.dockerconfigjson="$OPENSHIFT_PULL_SECRET" \
-  --type=kubernetes.io/dockerconfigjson
-apply_secret "$CLUSTERS_NAMESPACE" generic "$SSH_KEY_SECRET_NAME" \
-  --from-file=id_rsa.pub="$SSH_KEY"
+  --type=kubernetes.io/dockerconfigjson \
+  -n "$CLUSTERS_NAMESPACE"
+# @code-as-a-doc: end section "hcp-pull-secret"
+# @code-as-a-doc: start section "hcp-ssh-key-secret"
+#   | remove-prefix: "apply_secret " | doc remove-prefix: "$ oc create secret "
+#   | TODO: "apply_secret is oc create secret made rerunnable (--dry-run=client piped to oc apply); an asadoc option that maps a code command to the doc's would replace both remove-prefix options"
+#   | reindent: 2 -> 4
+#   | TODO: "The docs indent continuation lines by 4 here and by 2 in their maintenance-operator and injector commands; use 2 throughout the docs"
+#   | param: "\"$*\""
+apply_secret generic "$SSH_KEY_SECRET_NAME" \
+  --from-file=id_rsa.pub="$SSH_KEY" \
+  --type=Opaque \
+  -n "$CLUSTERS_NAMESPACE"
+# @code-as-a-doc: end section "hcp-ssh-key-secret"
 
 apply_manifest "$(manifest hosted/dpucluster.yaml)"
 apply_manifest "$(manifest hosted/dpfhcpprovisioner.yaml)"

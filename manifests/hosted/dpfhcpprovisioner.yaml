@@ -1,3 +1,4 @@
+# @code-as-a-doc: file | param: "${*}"
 apiVersion: provisioning.dpu.hcp.io/v1alpha1
 kind: DPFHCPProvisioner
 metadata:

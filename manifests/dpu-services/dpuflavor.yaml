@@ -1,3 +1,5 @@
+# @code-as-a-doc: file | param: "${*}"
+#   | TODO: "HUMAN-REVIEW-001 - Flagged for human review priority 8, see .asadoc/human-review/08-HUMAN-REVIEW-001.md"
 apiVersion: provisioning.dpu.nvidia.com/v1alpha1
 kind: DPUFlavor
 metadata:

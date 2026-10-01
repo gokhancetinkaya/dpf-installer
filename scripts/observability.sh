@@ -23,12 +23,21 @@ apply_manifest "$(manifest observability/dts-servicemonitor.yaml)"
 apply_manifest "$(manifest observability/dts-console-dashboard.yaml)"
 
 log "Installing grafana-operator ${GRAFANA_OPERATOR_VERSION}"
+# @code-as-a-doc: start section "grafana-operator-install"
+#   | remove-prefix: "helm_upgrade " | doc remove-prefix: "$ helm upgrade -i "
+#   | TODO: "helm_upgrade is helm upgrade --install plus --force-conflicts (Helm 4) and --timeout; an asadoc option that maps a code command to the doc's would replace both remove-prefix options"
+#   | TODO: "The docs use helm upgrade -i here and --install everywhere else; use --install in the docs"
+#   | remove-lines-starting-with: "--wait"
+#   | TODO: "The docs don't pass --wait, so the next step can run before the chart is ready; add --wait to the docs"
+#   | reindent: 2 -> 4
+#   | TODO: "The docs indent continuation lines by 4 here and by 2 in their maintenance-operator and injector commands; use 2 throughout the docs"
+#   | param: "\"$*\""
 helm_upgrade grafana-operator "$GRAFANA_OPERATOR_CHART" \
+  --wait \
   --version "$GRAFANA_OPERATOR_VERSION" \
   --namespace grafana-operator \
-  --create-namespace \
-  --wait \
-  --timeout "$HELM_TIMEOUT"
+  --create-namespace
+# @code-as-a-doc: end section "grafana-operator-install"
 
 apply_manifest "$(manifest observability/grafana-operator-route-rbac.yaml)"
 apply_manifest "$(manifest observability/grafana-rbac.yaml)"
