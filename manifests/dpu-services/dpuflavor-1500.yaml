@@ -1,5 +1,4 @@
 # @code-as-a-doc: file | param: "${*}"
-#   | TODO: "HUMAN-REVIEW-001 - Flagged for human review priority 8, see .asadoc/human-review/08-HUMAN-REVIEW-001.md"
 apiVersion: provisioning.dpu.nvidia.com/v1alpha1
 kind: DPUFlavor
 metadata:
@@ -33,7 +32,6 @@ spec:
         - SRIOV_EN=1
         - NUM_OF_VFS=${NUM_VFS}
         - LAG_RESOURCE_ALLOCATION=1
-        - NUM_VF_MSIX=30
         - LINK_TYPE_P1=ETH
         - LINK_TYPE_P2=ETH
   ovs:
@@ -103,14 +101,12 @@ spec:
       _ovs-vsctl br-set-external-id br-dpu bridge-id br-dpu
       _ovs-vsctl br-set-external-id br-dpu bridge-uplink pbrdputobrovn
       _ovs-vsctl set bridge br-dpu datapath_type=netdev
-      _ovs-vsctl set Interface br-dpu mtu_request=9000
       _ovs-vsctl --may-exist add-port br-dpu pf0hpf
       _ovs-vsctl set Interface pf0hpf type=dpdk
 
       # Create OVS bridge (br-ovn) in between the SC managed bridge and OVNK
       _ovs-vsctl --may-exist add-br br-ovn
       _ovs-vsctl set bridge br-ovn datapath_type=netdev
-      _ovs-vsctl set Interface br-ovn mtu_request=9000
       _ovs-vsctl --may-exist add-port br-ovn pbrovntobrdpu
       _ovs-vsctl --may-exist add-port br-dpu pbrdputobrovn
 

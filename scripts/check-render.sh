@@ -13,13 +13,15 @@ require_cmds envsubst
 require_install_vars
 render_all
 
-flavor="${GENERATED_DIR}/dpu-services/dpuflavor.yaml"
-grep -F -q "NUM_OF_VFS=${NUM_VFS}" "$flavor" || die "DPUFlavor NUM_VFS was not rendered"
-grep -F -q 'other_config:$1' "$flavor" || die "DPUFlavor shell script lost \$1"
-grep -F -q '"$@"' "$flavor" || die "DPUFlavor shell script lost \$@"
-if grep -F -q 'NUM_OF_VFS=${NUM_VFS}' "$flavor"; then
-  die "DPUFlavor still contains an unsubstituted NUM_VFS"
-fi
+for mtu in 1500 9000; do
+  flavor="${GENERATED_DIR}/dpu-services/dpuflavor-${mtu}.yaml"
+  grep -F -q "NUM_OF_VFS=${NUM_VFS}" "$flavor" || die "DPUFlavor (MTU ${mtu}) NUM_VFS was not rendered"
+  grep -F -q 'other_config:$1' "$flavor" || die "DPUFlavor (MTU ${mtu}) shell script lost \$1"
+  grep -F -q '"$@"' "$flavor" || die "DPUFlavor (MTU ${mtu}) shell script lost \$@"
+  if grep -F -q 'NUM_OF_VFS=${NUM_VFS}' "$flavor"; then
+    die "DPUFlavor (MTU ${mtu}) still contains an unsubstituted NUM_VFS"
+  fi
+done
 
 ovn="${GENERATED_DIR}/dpu-services/ovn-k.yaml"
 grep -F -q "https://${HOST_CLUSTER_API}:${TARGETCLUSTER_API_SERVER_PORT}" "$ovn" || die "OVN API server was not rendered"

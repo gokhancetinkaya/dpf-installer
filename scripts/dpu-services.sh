@@ -10,10 +10,11 @@ require_vars \
   HOST_CLUSTER_API TARGETCLUSTER_API_SERVER_PORT \
   OVN_MTU OVN_POD_NETWORK OVN_SERVICE_NETWORK \
   VTEP_CIDR DPU_HOST_CIDR NODES_MTU
+require_nodes_mtu
 
 apply_manifest "$(manifest dpu-services/nodesriovdevicepluginconfig.yaml)"
 oc get nodesriovdevicepluginconfig -n dpf-operator-system
-apply_manifest "$(manifest dpu-services/dpuflavor.yaml)"
+apply_manifest "$(manifest "dpu-services/dpuflavor-${NODES_MTU}.yaml")"
 apply_manifest "$(manifest dpu-services/bfb.yaml)"
 apply_manifest "$(manifest dpu-services/dpudeployment.yaml)"
 apply_manifest "$(manifest dpu-services/hbn.yaml)"

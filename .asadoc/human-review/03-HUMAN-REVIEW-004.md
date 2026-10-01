@@ -12,6 +12,6 @@ Blocks ignored for the installer:
 - `no-repo-source/traffic-test-pods.txt`: the installer has no traffic test workload.
 - `no-repo-source/baremetalhost-without-dpu.txt`: the installer only provisions DPU workers. Workers without a DPU are a Technology Preview in the docs.
 
-The docs' environment variable exports (`nw-dpf-environment-variables`, `nw-dpf-hcp-environment-variables`) stay ignored. Their values differ from `.env.example` (for example, `NODES_MTU` 1500 in the docs vs 9000 here; see HUMAN-REVIEW-001).
+The docs' environment variable exports (`nw-dpf-environment-variables`, `nw-dpf-hcp-environment-variables`) stay ignored. Their values differ from `.env.example` (for example, `NODES_MTU` 1500 in the docs vs 9000 here).
 
 **Decide:** whether the copied reasons hold for the installer.
