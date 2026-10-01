@@ -13,7 +13,7 @@ require_vars \
 
 apply_manifest "$(manifest dpu-services/nodesriovdevicepluginconfig.yaml)"
 oc get nodesriovdevicepluginconfig -n dpf-operator-system
-apply_manifest "$(manifest dpu-services/dpuflavor.yaml)"
+apply_manifest "$(manifest "$(dpuflavor_manifest)")"
 apply_manifest "$(manifest dpu-services/bfb.yaml)"
 apply_manifest "$(manifest dpu-services/dpudeployment.yaml)"
 apply_manifest "$(manifest dpu-services/hbn.yaml)"

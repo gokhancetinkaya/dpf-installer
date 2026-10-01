@@ -13,13 +13,29 @@ require_cmds envsubst
 require_install_vars
 render_all
 
-flavor="${GENERATED_DIR}/dpu-services/dpuflavor.yaml"
-grep -F -q "NUM_OF_VFS=${NUM_VFS}" "$flavor" || die "DPUFlavor NUM_VFS was not rendered"
-grep -F -q 'other_config:$1' "$flavor" || die "DPUFlavor shell script lost \$1"
-grep -F -q '"$@"' "$flavor" || die "DPUFlavor shell script lost \$@"
-if grep -F -q 'NUM_OF_VFS=${NUM_VFS}' "$flavor"; then
-  die "DPUFlavor still contains an unsubstituted NUM_VFS"
+for flavor_name in dpuflavor-9000.yaml dpuflavor-1500.yaml; do
+  flavor="${GENERATED_DIR}/dpu-services/${flavor_name}"
+  grep -F -q "NUM_OF_VFS=${NUM_VFS}" "$flavor" || die "DPUFlavor NUM_VFS was not rendered in ${flavor_name}"
+  grep -F -q 'other_config:$1' "$flavor" || die "DPUFlavor shell script lost \$1 in ${flavor_name}"
+  grep -F -q '"$@"' "$flavor" || die "DPUFlavor shell script lost \$@ in ${flavor_name}"
+  if grep -F -q 'NUM_OF_VFS=${NUM_VFS}' "$flavor"; then
+    die "DPUFlavor still contains an unsubstituted NUM_VFS in ${flavor_name}"
+  fi
+done
+
+jumbo="${GENERATED_DIR}/dpu-services/dpuflavor-9000.yaml"
+standard="${GENERATED_DIR}/dpu-services/dpuflavor-1500.yaml"
+grep -F -q 'NUM_VF_MSIX=30' "$jumbo" || die "9000 DPUFlavor is missing NUM_VF_MSIX"
+grep -F -q 'set Interface br-dpu mtu_request=9000' "$jumbo" || die "9000 DPUFlavor is missing br-dpu MTU"
+grep -F -q 'set Interface br-ovn mtu_request=9000' "$jumbo" || die "9000 DPUFlavor is missing br-ovn MTU"
+if grep -F -q 'NUM_VF_MSIX' "$standard"; then
+  die "1500 DPUFlavor sets NUM_VF_MSIX"
 fi
+if grep -F -q 'mtu_request=9000' "$standard"; then
+  die "1500 DPUFlavor requests MTU 9000"
+fi
+selected="${GENERATED_DIR}/$(dpuflavor_manifest)"
+[[ -f "$selected" ]] || die "Selected DPUFlavor was not rendered"
 
 ovn="${GENERATED_DIR}/dpu-services/ovn-k.yaml"
 grep -F -q "https://${HOST_CLUSTER_API}:${TARGETCLUSTER_API_SERVER_PORT}" "$ovn" || die "OVN API server was not rendered"

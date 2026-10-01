@@ -1,10 +1,10 @@
+# Applied when NODES_MTU=9000.
 apiVersion: provisioning.dpu.nvidia.com/v1alpha1
 kind: DPUFlavor
 metadata:
   name: hbn-ovnk
   namespace: dpf-operator-system
   annotations:
-    # Required when flavor bfcfg exceeds the DPF limit of 128K
     provisioning.dpu.nvidia.com/skip-bfcfg-size-check: ""
 spec:
   grub:

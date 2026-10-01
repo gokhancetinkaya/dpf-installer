@@ -256,6 +256,20 @@ require_common() {
   grep -Eq '^(ssh-|ecdsa-)' "$SSH_KEY" \
     || die "SSH_KEY does not look like a public key: ${SSH_KEY}"
   [[ "$WORKER_COUNT" =~ ^[0-9]+$ ]] || die "WORKER_COUNT must be a number"
+  require_nodes_mtu
+}
+
+# NODES_MTU selects which DPUFlavor to apply.
+require_nodes_mtu() {
+  case "${NODES_MTU:-}" in
+    9000|1500) ;;
+    *) die "NODES_MTU must be 9000 or 1500 (got '${NODES_MTU:-}')" ;;
+  esac
+}
+
+dpuflavor_manifest() {
+  require_nodes_mtu
+  printf '%s\n' "dpu-services/dpuflavor-${NODES_MTU}.yaml"
 }
 
 require_workers() {
@@ -279,7 +293,7 @@ require_install_vars() {
 
 is_template() {
   case "$(basename "$1")" in
-    gitops-operator.yaml | nfd-instance.yaml | dpfoperatorconfig.yaml | dpuflavor.yaml | bfb.yaml | ovn-k.yaml | dpuservice-nad.yaml | dpuservice-ipam.yaml | dpucluster.yaml | dpfhcpprovisioner.yaml | bmc-secret.yaml | baremetalhost.yaml)
+    gitops-operator.yaml | nfd-instance.yaml | dpfoperatorconfig.yaml | dpuflavor-9000.yaml | dpuflavor-1500.yaml | bfb.yaml | ovn-k.yaml | dpuservice-nad.yaml | dpuservice-ipam.yaml | dpucluster.yaml | dpfhcpprovisioner.yaml | bmc-secret.yaml | baremetalhost.yaml)
       return 0
       ;;
     *)
