@@ -34,7 +34,15 @@ apply_manifest "$(manifest observability/grafana-operator-route-rbac.yaml)"
 apply_manifest "$(manifest observability/grafana-rbac.yaml)"
 apply_manifest "$(manifest observability/grafana-cr.yaml)"
 apply_manifest "$(manifest observability/grafana-datasource.yaml)"
+apply_manifest "$(manifest observability/grafana-dashboards.yaml)"
 apply_manifest "$(manifest observability/dts-grafana-dashboard.yaml)"
+
+log "Applying DPF metrics stack (kube-state-metrics + controller monitors)"
+apply_manifest "$(manifest observability/dpf-metrics/kube-state-metrics-rbac.yaml)"
+apply_manifest "$(manifest observability/dpf-metrics/kube-state-metrics-deployment.yaml)"
+apply_manifest "$(manifest observability/dpf-metrics/kube-state-metrics-servicemonitor.yaml)"
+apply_manifest "$(manifest observability/dpf-metrics/dpf-controller-rbac.yaml)"
+apply_manifest "$(manifest observability/dpf-metrics/dpf-controller-podmonitor.yaml)"
 
 host=""
 deadline=$((SECONDS + WAIT_SHORT))
