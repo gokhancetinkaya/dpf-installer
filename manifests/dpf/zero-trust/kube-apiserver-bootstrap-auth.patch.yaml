@@ -1,0 +1,8 @@
+# Zero Trust DPUs join the hosted cluster with a kube-apiserver bootstrap
+# token instead of a host-signed CSR (there is no trusted host to sign one).
+# Applied once via `oc patch kubeapiserver cluster --type=merge --patch-file`.
+spec:
+  unsupportedConfigOverrides:
+    apiServerArguments:
+      enable-bootstrap-token-auth:
+        - "true"

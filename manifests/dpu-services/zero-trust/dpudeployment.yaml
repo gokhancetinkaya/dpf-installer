@@ -1,0 +1,57 @@
+apiVersion: svc.dpu.nvidia.com/v1alpha1
+kind: DPUDeployment
+metadata:
+  name: dpudeployment
+  namespace: dpf-operator-system
+spec:
+  dpus:
+    bfb: bf-bundle
+    flavor: flavor-zt
+    dpuSetStrategy:
+      type: RollingUpdate
+    # There is no trusted host to drain: the DPU is provisioned standalone
+    # over Redfish, so nothing on the host side needs to be cordoned/drained.
+    nodeEffect:
+      noEffect: true
+    dpuSets:
+      - nameSuffix: "dpuset1"
+        # NOTE: the field observed in this exact shape in the upstream
+        # reference (rh-ecosystem-edge/openshift-dpf#431) is `nodeSelector`,
+        # not `dpuNodeSelector`. This repo's already-working host-trusted
+        # DPUDeployment (manifests/dpu-services/dpudeployment.yaml) uses
+        # `dpuNodeSelector` against the same DPF_VERSION, so that's what's
+        # used here. If the DPF v26.4.1 CRD rejects this field, try
+        # `nodeSelector` instead.
+        dpuNodeSelector:
+          matchLabels:
+            feature.node.kubernetes.io/dpu-enabled: ""
+  services:
+    hbn:
+      serviceTemplate: hbn
+      serviceConfiguration: hbn
+  serviceChains:
+    switches:
+      - serviceMTU: 9000
+        ports:
+          - serviceInterface:
+              matchLabels:
+                uplink: p0
+          - service:
+              name: hbn
+              interface: p0_if
+      - serviceMTU: 9000
+        ports:
+          - serviceInterface:
+              matchLabels:
+                uplink: p1
+          - service:
+              name: hbn
+              interface: p1_if
+      - serviceMTU: 9000
+        ports:
+          - serviceInterface:
+              matchLabels:
+                interface: pf0hpf
+          - service:
+              name: hbn
+              interface: pf0hpf_if

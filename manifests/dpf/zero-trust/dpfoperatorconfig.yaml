@@ -1,0 +1,50 @@
+apiVersion: operator.dpu.nvidia.com/v1alpha1
+kind: DPFOperatorConfig
+metadata:
+  name: dpfoperatorconfig
+  namespace: dpf-operator-system
+spec:
+  # Zero Trust never trusts the host OS: the host agent, host-based CNI
+  # install, and Kamaji-managed cluster membership are all disabled. DPF talks
+  # to each DPU directly over Redfish instead (provisioningController below).
+  dpuDetector:
+    disable: true
+  kamajiClusterManager:
+    disable: true
+  multus:
+    disable: true
+  cniInstaller:
+    disable: true
+  networking:
+    # NVIDIA's Zero Trust documentation caps controlPlaneMTU at 1500,
+    # independent of the high-speed data-plane MTU below. Do not set this to
+    # NODES_MTU (9000) the way the host-trusted DPFOperatorConfig does.
+    controlPlaneMTU: ${ZT_CONTROL_PLANE_MTU}
+    highSpeedMTU: ${NODES_MTU}
+  overrides:
+    dpuCNIBinPath: /var/lib/cni/bin/
+    dpuCNIPath: /run/multus/cni/net.d/
+    dpuOpenvSwitchSystemSharedLib64Path: /lib64
+    dpuLinkerCachePath: /etc/ld.so.cache
+    dpuOptLibraryPath: /usr/opt
+    flannelSkipCNIConfigInstallation: false
+    kubernetesAPIServerPort: ${TARGETCLUSTER_API_SERVER_PORT}
+    kubernetesAPIServerVIP: ${HOST_CLUSTER_API}
+  provisioningController:
+    enableDynamicBFCFGTemplates: true
+    hostAgentDNSPolicy: Default
+    dmsTimeout: 900
+    nodeEffectRemovalTimeout: "3600s"
+    installInterface:
+      installViaRedfish:
+        # true for static inventory (we already created DPUDevice/DPUNode
+        # ourselves); false for scanning, so the DPUDiscovery controller runs.
+        skipDPUNodeDiscovery: ${SKIP_DPU_NODE_DISCOVERY}
+    # registry.loadBalancerAddress is not rendered here. DPF publishes the
+    # BFB registry as a NodePort, and that port is assigned when the Service
+    # is created. configure_zero_trust_bfb_registry() in scripts/lib.sh sets
+    # http://<HOST_CLUSTER_API address>:<nodePort> after the Service exists.
+  staticClusterManager:
+    disable: false
+  flannel:
+    podCIDR: ${FLANNEL_POD_CIDR}

@@ -1,0 +1,11 @@
+# Static inventory mode (ZT_DPU_DISCOVERY_MODE=static). Rendered once per
+# DPU<n>_SERIAL/DPU<n>_BMC_IP pair by configure_zero_trust_dpu_inventory()
+# in scripts/lib.sh, which exports DPU_SERIAL/DPU_SERIAL_NUMBER/DPU_BMC_IP.
+apiVersion: provisioning.dpu.nvidia.com/v1alpha1
+kind: DPUDevice
+metadata:
+  name: ${DPU_SERIAL}
+  namespace: dpf-operator-system
+spec:
+  serialNumber: "${DPU_SERIAL_NUMBER}"
+  bmcIp: "${DPU_BMC_IP}"

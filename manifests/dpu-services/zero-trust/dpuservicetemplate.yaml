@@ -1,0 +1,23 @@
+# Zero Trust runs dpf-hcp-provisioner-operator with
+# provisionerConfig.manageDPUServiceTemplates=false (scripts/hosted.sh), so
+# the installer supplies its own HBN DPUServiceTemplate here instead of
+# relying on the operator's default (host-trusted, single-VRF) template.
+apiVersion: svc.dpu.nvidia.com/v1alpha1
+kind: DPUServiceTemplate
+metadata:
+  name: hbn
+  namespace: dpf-operator-system
+spec:
+  deploymentServiceName: "hbn"
+  helmChart:
+    source:
+      repoURL: ${HBN_HELM_REPO_URL}
+      version: "${HBN_HELM_CHART_VERSION}"
+      chart: doca-hbn
+    values:
+      image:
+        repository: ${HBN_IMAGE_REPO}
+        tag: "${HBN_IMAGE_TAG}"
+      resources:
+        memory: 6Gi
+        nvidia.com/bf_sf: 3

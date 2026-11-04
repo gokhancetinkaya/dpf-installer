@@ -1,4 +1,5 @@
 .env
+*.kubeconfig
+docs/
 generated/
 logs/
-*.kubeconfig

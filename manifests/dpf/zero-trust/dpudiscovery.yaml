@@ -1,0 +1,13 @@
+# Scanning inventory mode (ZT_DPU_DISCOVERY_MODE=scanning). DPF scans every
+# address in the inclusive range below over Redfish and creates a DPUDevice
+# and DPUNode for each DPU it finds. Gaps in the range are fine.
+apiVersion: provisioning.dpu.nvidia.com/v1alpha1
+kind: DPUDiscovery
+metadata:
+  name: ${ZT_DPU_DISCOVERY_NAME}
+  namespace: dpf-operator-system
+spec:
+  ipRangeSpec:
+    ipRange:
+      startIP: ${ZT_DPU_BMC_IP_RANGE_START}
+      endIP: ${ZT_DPU_BMC_IP_RANGE_END}

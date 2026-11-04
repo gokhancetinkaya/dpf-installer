@@ -11,6 +11,12 @@ bash -n "$script_dir/lib.sh"
 
 require_cmds envsubst
 require_install_vars
+# Zero Trust manifests always render below (render_all walks the whole
+# manifest tree) and this script reads these values directly, regardless of
+# the current DPF_DEPLOYMENT_MODE.
+require_vars ZT_BFB_REGISTRY_PORT ZT_CONTROL_PLANE_MTU \
+  HBN_HELM_CHART_VERSION HBN_IMAGE_TAG \
+  ZT_HBN_POOL1_CIDR ZT_HBN_POOL2_CIDR ZT_HBN_LOOPBACK_CIDR
 render_all
 
 for flavor_name in dpuflavor-9000.yaml dpuflavor-1500.yaml; do
@@ -64,6 +70,60 @@ hbn_src="$(manifest dpu-services/hbn.yaml)"
 hbn_out="${GENERATED_DIR}/dpu-services/hbn.yaml"
 cmp -s "$hbn_src" "$hbn_out" || die "HBN manifest was modified during render"
 grep -q '{{ ipaddresses.ip_lo.ip }}' "$hbn_out" || die "HBN Jinja template was stripped"
+
+# Zero Trust manifests always render (render_all walks the whole tree), so
+# these checks run regardless of the current DPF_DEPLOYMENT_MODE.
+zt_dpfconfig="${GENERATED_DIR}/dpf/zero-trust/dpfoperatorconfig.yaml"
+grep -F -q 'installViaRedfish:' "$zt_dpfconfig" || die "Zero Trust DPFOperatorConfig is missing installViaRedfish"
+if grep -E -q 'bfbRegistryAddress:|bfbRegistry:' "$zt_dpfconfig"; then
+  die "Zero Trust DPFOperatorConfig still sets the deprecated bfbRegistry address"
+fi
+zt_registry="${GENERATED_DIR}/dpf/zero-trust/bfb-registry-nodeport.yaml"
+grep -F -q "nodePort: ${ZT_BFB_REGISTRY_PORT}" "$zt_registry" || die "Zero Trust BFB registry NodePort was not rendered"
+grep -F -q "controlPlaneMTU: ${ZT_CONTROL_PLANE_MTU}" "$zt_dpfconfig" || die "Zero Trust DPFOperatorConfig controlPlaneMTU was not rendered"
+grep -F -q "highSpeedMTU: ${NODES_MTU}" "$zt_dpfconfig" || die "Zero Trust DPFOperatorConfig highSpeedMTU was not rendered"
+if [[ "$ZT_CONTROL_PLANE_MTU" -gt 1500 ]]; then
+  die "ZT_CONTROL_PLANE_MTU exceeds NVIDIA's Zero Trust cap of 1500"
+fi
+if grep -E '\$\{[A-Z][A-Z0-9_]+\}' "$zt_dpfconfig" >/dev/null; then
+  die "Zero Trust DPFOperatorConfig has an unsubstituted variable"
+fi
+
+if [[ -n "${ZT_DPU_BMC_ROOT_PASSWORD:-}" ]]; then
+  zt_bmc_secret="${GENERATED_DIR}/dpf/zero-trust/bmc-shared-password.yaml"
+  grep -F -q "password: ${ZT_DPU_BMC_ROOT_PASSWORD}" "$zt_bmc_secret" || die "Zero Trust BMC shared password was not rendered"
+fi
+
+zt_flavor="${GENERATED_DIR}/dpu-services/zero-trust/dpuflavor.yaml"
+grep -F -q "NUM_OF_VFS=${NUM_VFS}" "$zt_flavor" || die "Zero Trust DPUFlavor NUM_VFS was not rendered"
+grep -F -q 'dpuMode: zero-trust' "$zt_flavor" || die "Zero Trust DPUFlavor is missing dpuMode: zero-trust"
+
+zt_template="${GENERATED_DIR}/dpu-services/zero-trust/dpuservicetemplate.yaml"
+grep -F -q "version: \"${HBN_HELM_CHART_VERSION}\"" "$zt_template" || die "Zero Trust HBN chart version was not rendered"
+grep -F -q "tag: \"${HBN_IMAGE_TAG}\"" "$zt_template" || die "Zero Trust HBN image tag was not rendered"
+
+zt_hbn_out="${GENERATED_DIR}/dpu-services/zero-trust/hbn-configuration.yaml"
+grep -q '{{ ipaddresses.ip_lo.ip }}' "$zt_hbn_out" || die "Zero Trust HBN Jinja template was stripped"
+grep -q '{{ config.bgp_autonomous_system }}' "$zt_hbn_out" || die "Zero Trust HBN Jinja template was stripped"
+if grep -F -q '${DPU_VALUES}' "$zt_hbn_out"; then
+  die "Zero Trust HBN perDPUValuesYAML placeholder was not substituted (DPU_VALUES is set by dpu-services.sh, not render_all)"
+fi
+
+zt_ipam="${GENERATED_DIR}/dpu-services/zero-trust/dpuservice-ipam.yaml"
+grep -F -q "network: \"${ZT_HBN_POOL1_CIDR}\"" "$zt_ipam" || die "Zero Trust pool1 CIDR was not rendered"
+grep -F -q "network: \"${ZT_HBN_POOL2_CIDR}\"" "$zt_ipam" || die "Zero Trust pool2 CIDR was not rendered"
+grep -F -q "network: \"${ZT_HBN_LOOPBACK_CIDR}\"" "$zt_ipam" || die "Zero Trust loopback CIDR was not rendered"
+
+zt_iface="${GENERATED_DIR}/dpu-services/zero-trust/dpuserviceinterface.yaml"
+grep -F -q 'uplink: "p0"' "$zt_iface" || die "Zero Trust DPUServiceInterface is missing p0"
+grep -F -q 'interface: "pf0hpf"' "$zt_iface" || die "Zero Trust DPUServiceInterface is missing pf0hpf"
+
+if [[ -n "${DPU1_SERIAL:-}" ]]; then
+  # render_all() does not call use_dpu(), so this is a smoke test that the
+  # per-DPU templates render at all; dpf.sh renders/applies them per DPU.
+  [[ -f "${GENERATED_DIR}/dpf/zero-trust/dpudevice.yaml" ]] || die "Zero Trust DPUDevice template was not rendered"
+  [[ -f "${GENERATED_DIR}/dpf/zero-trust/dpunode.yaml" ]] || die "Zero Trust DPUNode template was not rendered"
+fi
 
 grafana_src="$(manifest observability/grafana-datasource.yaml)"
 grafana_out="${GENERATED_DIR}/observability/grafana-datasource.yaml"

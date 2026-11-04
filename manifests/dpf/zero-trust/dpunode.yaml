@@ -1,0 +1,17 @@
+# Static inventory mode. The feature.node.kubernetes.io/dpu-enabled label is
+# what DPUDeployment's dpuNodeSelector (dpu-services/zero-trust/dpudeployment.yaml)
+# matches on. Scanning-mode DPUNodes are created by the DPUDiscovery
+# controller without this label; configure_zero_trust_dpu_inventory() applies
+# it afterward in both modes.
+apiVersion: provisioning.dpu.nvidia.com/v1alpha1
+kind: DPUNode
+metadata:
+  name: dpu-node-${DPU_SERIAL}
+  namespace: dpf-operator-system
+  labels:
+    feature.node.kubernetes.io/dpu-enabled: ""
+spec:
+  dpus:
+    - name: ${DPU_SERIAL}
+  nodeRebootMethod:
+    external: {}

@@ -47,6 +47,24 @@ ENV_VARS=(
   BMC_IP
   GITOPS_OPERATOR_CHANNEL
   GITOPS_OPERATOR_CSV
+  ZT_DPU_DISCOVERY_NAME
+  ZT_DPU_BMC_IP_RANGE_START
+  ZT_DPU_BMC_IP_RANGE_END
+  ZT_DPU_BMC_ROOT_PASSWORD
+  ZT_BFB_REGISTRY_PORT
+  ZT_HBN_POOL1_CIDR
+  ZT_HBN_POOL2_CIDR
+  ZT_HBN_LOOPBACK_CIDR
+  ZT_CONTROL_PLANE_MTU
+  HBN_HELM_REPO_URL
+  HBN_HELM_CHART_VERSION
+  HBN_IMAGE_REPO
+  HBN_IMAGE_TAG
+  SKIP_DPU_NODE_DISCOVERY
+  DPU_SERIAL
+  DPU_SERIAL_NUMBER
+  DPU_BMC_IP
+  DPU_VALUES
 )
 
 log() {
@@ -84,10 +102,12 @@ MANAGED_VARS=(
   MAINTENANCE_OPERATOR_CHART MAINTENANCE_OPERATOR_VERSION
   DPF_HELM_REPO DPF_VERSION
   OVN_TEMPLATE_CHART_URL OVN_CHART_VERSION
-  DPF_HCP_PROVISIONER_CHART DPF_HCP_PROVISIONER_VERSION
+  DPF_HCP_PROVISIONER_CHART DPF_HCP_PROVISIONER_VERSION \
+  DPF_HCP_PROVISIONER_IMAGE_REPO DPF_HCP_PROVISIONER_IMAGE_TAG
   GRAFANA_OPERATOR_CHART GRAFANA_OPERATOR_VERSION
   HELM_TIMEOUT WAIT_SHORT WAIT_MEDIUM WAIT_CONDITIONS WAIT_HOSTED
   WORKER_JOIN_TIMEOUT DPU_READY_TIMEOUT APPLY_RETRIES
+  DPF_DEPLOYMENT_MODE ZT_DPU_DISCOVERY_MODE
 )
 
 load_env() {
@@ -100,6 +120,9 @@ load_env() {
   done
   for v in $(compgen -e); do
     if [[ "$v" =~ ^WORKER_[0-9]+_ ]]; then
+      unset "$v"
+    fi
+    if [[ "$v" =~ ^DPU[1-9][0-9]*_(SERIAL|BMC_IP)$ ]]; then
       unset "$v"
     fi
   done
@@ -122,46 +145,14 @@ apply_derived() {
   if [[ -n "${OPENSHIFT_VERSION:-}" ]]; then
     : "${OCP_RELEASE_IMAGE:=quay.io/openshift-release-dev/ocp-release:${OPENSHIFT_VERSION}-multi}"
   fi
+  export HOST_CLUSTER_API OCP_RELEASE_IMAGE
 
-  : "${TARGETCLUSTER_API_SERVER_PORT:=6443}"
-  : "${CLUSTERS_NAMESPACE:=clusters}"
-  : "${PULL_SECRET_NAME:=pull-secret}"
-  : "${SSH_KEY_SECRET_NAME:=ssh-key}"
-  : "${WORKER_COUNT:=1}"
-  : "${DPU_WORKER_CONFIG_CHART:=oci://registry.redhat.io/dpu-kit-for-nvidia/dpu-worker-config-chart}"
-  : "${DPU_WORKER_CONFIG_VERSION:=4.22.0}"
-  : "${MAINTENANCE_OPERATOR_CHART:=oci://ghcr.io/mellanox/maintenance-operator-chart}"
-  : "${MAINTENANCE_OPERATOR_VERSION:=0.3.0}"
-  : "${DPF_HELM_REPO:=https://helm.ngc.nvidia.com/nvidia/doca}"
-  : "${DPF_VERSION:=v26.4.1}"
-  : "${OVN_TEMPLATE_CHART_URL:=oci://ghcr.io/mellanox/charts}"
-  : "${OVN_CHART_VERSION:=v26.4.1-ocp-release-v4.22}"
-  : "${OVN_POD_NETWORK:=10.128.0.0/14/23}"
-  : "${OVN_SERVICE_NETWORK:=172.30.0.0/16}"
-  : "${DPF_HCP_PROVISIONER_CHART:=oci://registry.redhat.io/dpu-kit-for-nvidia/dpf-hcp-provisioner-chart}"
-  : "${DPF_HCP_PROVISIONER_VERSION:=4.22.0}"
-  : "${GRAFANA_OPERATOR_CHART:=oci://ghcr.io/grafana/helm-charts/grafana-operator}"
-  : "${GRAFANA_OPERATOR_VERSION:=5.24.0}"
-  : "${GITOPS_OPERATOR_CHANNEL:=gitops-1.21}"
-  : "${GITOPS_OPERATOR_CSV:=openshift-gitops-operator.v1.21.3}"
-  : "${BFB_ATF:=4.15.0-4-g419fbf393}"
-  : "${BFB_BSP:=4.15.0.13998}"
-  : "${BFB_DOCA:=3.4.1}"
-  : "${BFB_UEFI:=4.15.0-19-g37c6f5adb2}"
-  : "${HELM_TIMEOUT:=15m}"
-  : "${WAIT_SHORT:=180}"
-  : "${WAIT_MEDIUM:=600}"
-  : "${WAIT_CONDITIONS:=1200}"
-  : "${WAIT_HOSTED:=1800}"
-  : "${WORKER_JOIN_TIMEOUT:=3600}"
-  : "${DPU_READY_TIMEOUT:=3600}"
-  : "${APPLY_RETRIES:=12}"
-
-  export HOST_CLUSTER_API OCP_RELEASE_IMAGE TARGETCLUSTER_API_SERVER_PORT \
-    CLUSTERS_NAMESPACE PULL_SECRET_NAME SSH_KEY_SECRET_NAME WORKER_COUNT \
+  require_vars \
+    TARGETCLUSTER_API_SERVER_PORT CLUSTERS_NAMESPACE \
+    PULL_SECRET_NAME SSH_KEY_SECRET_NAME WORKER_COUNT \
     DPU_WORKER_CONFIG_CHART DPU_WORKER_CONFIG_VERSION \
     MAINTENANCE_OPERATOR_CHART MAINTENANCE_OPERATOR_VERSION \
-    DPF_HELM_REPO DPF_VERSION \
+    DPF_HELM_REPO DPF_VERSION DPF_DEPLOYMENT_MODE \
     OVN_TEMPLATE_CHART_URL OVN_CHART_VERSION OVN_POD_NETWORK OVN_SERVICE_NETWORK \
     DPF_HCP_PROVISIONER_CHART DPF_HCP_PROVISIONER_VERSION \
     GRAFANA_OPERATOR_CHART GRAFANA_OPERATOR_VERSION \
@@ -169,6 +160,11 @@ apply_derived() {
     BFB_ATF BFB_BSP BFB_DOCA BFB_UEFI \
     HELM_TIMEOUT WAIT_SHORT WAIT_MEDIUM WAIT_CONDITIONS WAIT_HOSTED \
     WORKER_JOIN_TIMEOUT DPU_READY_TIMEOUT APPLY_RETRIES
+
+  case "$DPF_DEPLOYMENT_MODE" in
+    host-trusted | zero-trust) ;;
+    *) die "DPF_DEPLOYMENT_MODE must be 'host-trusted' or 'zero-trust' (got '${DPF_DEPLOYMENT_MODE}')" ;;
+  esac
 
   resolve_path_var KUBECONFIG
   resolve_path_var OPENSHIFT_PULL_SECRET
@@ -268,12 +264,28 @@ require_nodes_mtu() {
 }
 
 dpuflavor_manifest() {
+  if is_zero_trust; then
+    printf '%s\n' "dpu-services/zero-trust/dpuflavor.yaml"
+    return 0
+  fi
   require_nodes_mtu
   printf '%s\n' "dpu-services/dpuflavor-${NODES_MTU}.yaml"
 }
 
+dpfoperatorconfig_manifest() {
+  if is_zero_trust; then
+    printf '%s\n' "dpf/zero-trust/dpfoperatorconfig.yaml"
+  else
+    printf '%s\n' "dpf/dpfoperatorconfig.yaml"
+  fi
+}
+
 require_workers() {
   local i field name
+  # Zero Trust never provisions a BareMetalHost; WORKER_* variables are unused.
+  if is_zero_trust; then
+    return 0
+  fi
   if [[ "$WORKER_COUNT" == "0" ]]; then
     return 0
   fi
@@ -293,7 +305,7 @@ require_install_vars() {
 
 is_template() {
   case "$(basename "$1")" in
-    gitops-operator.yaml | nfd-instance.yaml | dpfoperatorconfig.yaml | dpuflavor-9000.yaml | dpuflavor-1500.yaml | bfb.yaml | ovn-k.yaml | dpuservice-nad.yaml | dpuservice-ipam.yaml | dpucluster.yaml | dpfhcpprovisioner.yaml | bmc-secret.yaml | baremetalhost.yaml)
+    gitops-operator.yaml | nfd-instance.yaml | dpfoperatorconfig.yaml | dpuflavor-9000.yaml | dpuflavor-1500.yaml | bfb.yaml | ovn-k.yaml | dpuservice-nad.yaml | dpuservice-ipam.yaml | dpucluster.yaml | dpfhcpprovisioner.yaml | bmc-secret.yaml | baremetalhost.yaml | bmc-shared-password.yaml | bfb-registry-nodeport.yaml | dpudiscovery.yaml | dpudevice.yaml | dpunode.yaml | dpuflavor.yaml | dpuservicetemplate.yaml | hbn-configuration.yaml)
       return 0
       ;;
     *)
@@ -529,6 +541,531 @@ helm_upgrade() {
     args+=(--force-conflicts)
   fi
   helm "${args[@]}" "$@"
+}
+
+####################################################################
+# Zero Trust helpers
+#
+# Zero Trust mode never trusts the host OS: DPF provisions each DPU
+# directly over its own BMC/Redfish instead of through a BareMetalHost.
+# See the "Zero Trust mode" section in README.md.
+####################################################################
+
+is_zero_trust() {
+  [[ "$DPF_DEPLOYMENT_MODE" == "zero-trust" ]]
+}
+
+# Prints DPU1_SERIAL, DPU2_SERIAL, DPU3_SERIAL, ... in numeric order.
+# Additional numbered variables can be added to .env without changing scripts.
+list_dpu_serial_variables() {
+  compgen -A variable | grep -E '^DPU[1-9][0-9]*_SERIAL$' | sort -V || true
+}
+
+# Exports DPU_SERIAL, DPU_SERIAL_NUMBER, and DPU_BMC_IP for the DPU named by
+# the given DPU<n>_SERIAL variable, for use by manifest() + apply_manifest().
+use_dpu() {
+  local serial_var="$1"
+  local bmc_ip_var="${serial_var%_SERIAL}_BMC_IP"
+  export DPU_SERIAL="${!serial_var}"
+  export DPU_SERIAL_NUMBER="${DPU_SERIAL^^}"
+  export DPU_BMC_IP="${!bmc_ip_var:-}"
+}
+
+ipv4_to_int() {
+  local ip="$1" a b c d
+  IFS=. read -r a b c d <<<"$ip" 2>/dev/null || return 1
+  [[ "$a" =~ ^[0-9]{1,3}$ && "$b" =~ ^[0-9]{1,3}$ && "$c" =~ ^[0-9]{1,3}$ && "$d" =~ ^[0-9]{1,3}$ ]] || return 1
+  ((a <= 255 && b <= 255 && c <= 255 && d <= 255)) || return 1
+  printf '%d\n' "$(((a << 24) + (b << 16) + (c << 8) + d))"
+}
+
+valid_ipv4() {
+  ipv4_to_int "$1" >/dev/null 2>&1
+}
+
+# Validates every DPF_DEPLOYMENT_MODE=zero-trust input in .env. Called from
+# preflight (fail fast) and again from dpf.sh (phases are independently
+# re-runnable, so each phase validates what it needs).
+require_zero_trust() {
+  require_vars ZT_DPU_BMC_ROOT_PASSWORD ZT_DPU_DISCOVERY_MODE ZT_CONTROL_PLANE_MTU ZT_BFB_REGISTRY_PORT \
+    HBN_HELM_REPO_URL HBN_HELM_CHART_VERSION HBN_IMAGE_REPO HBN_IMAGE_TAG \
+    ZT_HBN_POOL1_CIDR ZT_HBN_POOL2_CIDR ZT_HBN_LOOPBACK_CIDR
+  : "${ZT_AUTO_POWER_CYCLE:=false}"
+  : "${WAIT_EXTERNAL_REBOOT:=1800}"
+  export ZT_AUTO_POWER_CYCLE WAIT_EXTERNAL_REBOOT
+  case "$ZT_AUTO_POWER_CYCLE" in
+    true | false) ;;
+    *) die "ZT_AUTO_POWER_CYCLE must be 'true' or 'false' (got '${ZT_AUTO_POWER_CYCLE}')" ;;
+  esac
+  require_seconds WAIT_EXTERNAL_REBOOT
+  [[ "$NODES_MTU" == "9000" ]] || die "DPF_DEPLOYMENT_MODE=zero-trust requires NODES_MTU=9000"
+  # NVIDIA's Zero Trust documentation caps controlPlaneMTU at 1500, separate
+  # from the 9000 high-speed/data-plane MTU set from NODES_MTU above.
+  [[ "$ZT_CONTROL_PLANE_MTU" =~ ^[0-9]+$ ]] || die "ZT_CONTROL_PLANE_MTU must be a number (got '${ZT_CONTROL_PLANE_MTU}')"
+  ((ZT_CONTROL_PLANE_MTU > 0 && ZT_CONTROL_PLANE_MTU <= 1500)) || die "ZT_CONTROL_PLANE_MTU must be between 1 and 1500 (got '${ZT_CONTROL_PLANE_MTU}')"
+  # This is the NodePort on a Service this installer owns. It must stay in the
+  # cluster NodePort range. The operator's own bfb-registry Service gets a new
+  # port whenever it is recreated, so Redfish cannot use that port.
+  [[ "$ZT_BFB_REGISTRY_PORT" =~ ^[0-9]+$ ]] || die "ZT_BFB_REGISTRY_PORT must be a number (got '${ZT_BFB_REGISTRY_PORT}')"
+  ((ZT_BFB_REGISTRY_PORT >= 30000 && ZT_BFB_REGISTRY_PORT <= 32767)) || die "ZT_BFB_REGISTRY_PORT must be in the NodePort range 30000-32767 (got '${ZT_BFB_REGISTRY_PORT}')"
+
+  case "$ZT_DPU_DISCOVERY_MODE" in
+    scanning | static) ;;
+    *) die "ZT_DPU_DISCOVERY_MODE must be 'scanning' or 'static' (got '${ZT_DPU_DISCOVERY_MODE}')" ;;
+  esac
+
+  [[ -n "${DPU1_SERIAL:-}" ]] || die "DPF_DEPLOYMENT_MODE=zero-trust requires at least DPU1_SERIAL"
+  # The DPU is powered by the server chassis. Those BMCs are the WORKER_*
+  # credentials; Zero Trust uses them only to turn the chassis on.
+  [[ "${WORKER_COUNT}" =~ ^[0-9]+$ ]] || die "WORKER_COUNT must be a number (got '${WORKER_COUNT}')"
+  ((WORKER_COUNT >= 1)) || die "DPF_DEPLOYMENT_MODE=zero-trust requires WORKER_COUNT >= 1. The server BMC powers the chassis the DPU is plugged into. No BareMetalHost is created."
+  local host_index
+  for ((host_index = 1; host_index <= WORKER_COUNT; host_index++)); do
+    load_host_bmc "$host_index"
+    [[ -n "$HOST_BMC_IP" ]] || die "Zero Trust requires the server BMC address for chassis ${host_index} (${HOST_BMC_NAME})"
+    [[ -n "$HOST_BMC_USER" && -n "$HOST_BMC_PASSWORD" ]] || die "Zero Trust requires the server BMC user and password for chassis ${host_index} (${HOST_BMC_NAME})"
+    valid_ipv4 "$HOST_BMC_IP" || die "Server BMC address for ${HOST_BMC_NAME} is not a valid IPv4 address: ${HOST_BMC_IP}"
+  done
+
+  local serial_var serial seen_serials=" "
+  while IFS= read -r serial_var; do
+    serial="${!serial_var}"
+    [[ -n "$serial" ]] || continue
+    [[ "$serial" =~ [[:upper:]] ]] && die "${serial_var} must be lowercase (got '${serial}')"
+    [[ "$seen_serials" == *" ${serial} "* ]] && die "${serial_var} duplicates another DPU serial: ${serial}"
+    seen_serials+="${serial} "
+  done < <(list_dpu_serial_variables)
+
+  if [[ "$ZT_DPU_DISCOVERY_MODE" == "static" ]]; then
+    local bmc_ip_var bmc_ip seen_ips=" "
+    while IFS= read -r serial_var; do
+      serial="${!serial_var}"
+      [[ -n "$serial" ]] || continue
+      bmc_ip_var="${serial_var%_SERIAL}_BMC_IP"
+      bmc_ip="${!bmc_ip_var:-}"
+      [[ -n "$bmc_ip" ]] || die "Static Zero Trust inventory requires ${bmc_ip_var} for ${serial_var}"
+      valid_ipv4 "$bmc_ip" || die "${bmc_ip_var} is not a valid IPv4 address: ${bmc_ip}"
+      [[ "$seen_ips" == *" ${bmc_ip} "* ]] && die "${bmc_ip_var} duplicates another DPU BMC IP: ${bmc_ip}"
+      seen_ips+="${bmc_ip} "
+    done < <(list_dpu_serial_variables)
+  else
+    require_vars ZT_DPU_DISCOVERY_NAME ZT_DPU_BMC_IP_RANGE_START ZT_DPU_BMC_IP_RANGE_END
+    local start_i end_i
+    start_i=$(ipv4_to_int "$ZT_DPU_BMC_IP_RANGE_START") || die "ZT_DPU_BMC_IP_RANGE_START is not a valid IPv4 address: ${ZT_DPU_BMC_IP_RANGE_START}"
+    end_i=$(ipv4_to_int "$ZT_DPU_BMC_IP_RANGE_END") || die "ZT_DPU_BMC_IP_RANGE_END is not a valid IPv4 address: ${ZT_DPU_BMC_IP_RANGE_END}"
+    ((start_i <= end_i)) || die "ZT_DPU_BMC_IP_RANGE_START must not be greater than ZT_DPU_BMC_IP_RANGE_END"
+  fi
+}
+
+# Loads HOST_BMC_NAME, HOST_BMC_IP, HOST_BMC_USER, and HOST_BMC_PASSWORD for
+# chassis n. Chassis 1 uses the unnumbered BMC_* variables.
+load_host_bmc() {
+  local i="$1" name
+  if ((i == 1)); then
+    HOST_BMC_NAME="${WORKER_NAME:-worker-01}"
+    HOST_BMC_IP="${BMC_IP:-}"
+    HOST_BMC_USER="${BMC_USER:-}"
+    HOST_BMC_PASSWORD="${BMC_PASSWORD:-}"
+  else
+    name="WORKER_${i}_NAME"
+    HOST_BMC_NAME="${!name:-worker-${i}}"
+    name="WORKER_${i}_BMC_IP"
+    HOST_BMC_IP="${!name:-}"
+    name="WORKER_${i}_BMC_USER"
+    HOST_BMC_USER="${!name:-}"
+    name="WORKER_${i}_BMC_PASSWORD"
+    HOST_BMC_PASSWORD="${!name:-}"
+  fi
+  export HOST_BMC_NAME HOST_BMC_IP HOST_BMC_USER HOST_BMC_PASSWORD
+}
+
+# Performs one Redfish request against the server BMC in HOST_BMC_*.
+# Prints the response body, then a line with the HTTP status code.
+host_bmc_redfish() {
+  local method="$1" url="$2" data="${3:-}"
+  local cfg out
+  command -v curl >/dev/null 2>&1 || die "curl is required to power the server chassis through its BMC"
+  command -v python3 >/dev/null 2>&1 || die "python3 is required to read the server BMC Redfish response"
+  cfg="$(mktemp)"
+  chmod 600 "$cfg"
+  export HOST_BMC_CURL_CONFIG="$cfg"
+  python3 - <<'PY'
+import os
+path = os.environ["HOST_BMC_CURL_CONFIG"]
+def esc(value):
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+with open(path, "w") as fh:
+    fh.write('user = "%s:%s"\n' % (esc(os.environ["HOST_BMC_USER"]), esc(os.environ["HOST_BMC_PASSWORD"])))
+PY
+  if [[ -n "$data" ]]; then
+    out="$(curl -sk --config "$cfg" --connect-timeout 8 --max-time 20 \
+      -X "$method" -H 'Content-Type: application/json' --data "$data" \
+      -w $'\n%{http_code}' "$url" || true)"
+  else
+    out="$(curl -sk --config "$cfg" --connect-timeout 8 --max-time 20 \
+      -X "$method" -w $'\n%{http_code}' "$url" || true)"
+  fi
+  rm -f "$cfg"
+  printf '%s\n' "$out"
+}
+
+host_bmc_redfish_code() {
+  printf '%s\n' "${1##*$'\n'}"
+}
+
+host_bmc_redfish_body() {
+  local response="$1"
+  printf '%s\n' "${response%$'\n'*}"
+}
+
+# Powers on every configured server chassis, then waits until each static
+# DPU BMC answers. Already-on chassis are left alone. No BareMetalHost is created.
+power_on_zero_trust_hosts() {
+  local host_index start response code body system_path reset_path state serial_var serial bmc_ip
+  log "Ensuring ${WORKER_COUNT} server chassis powered on for Zero Trust"
+  for ((host_index = 1; host_index <= WORKER_COUNT; host_index++)); do
+    load_host_bmc "$host_index"
+    response="$(host_bmc_redfish GET "https://${HOST_BMC_IP}/redfish/v1/Systems")"
+    code="$(host_bmc_redfish_code "$response")"
+    body="$(host_bmc_redfish_body "$response")"
+    [[ "$code" =~ ^2 ]] || die "Server BMC ${HOST_BMC_IP} (${HOST_BMC_NAME}) Redfish /Systems returned HTTP ${code}"
+    system_path="$(printf '%s\n' "$body" | python3 -c 'import json,sys; d=json.load(sys.stdin); m=d.get("Members") or []; print(m[0].get("@odata.id","") if m else "")')"
+    [[ -n "$system_path" ]] || die "Server BMC ${HOST_BMC_IP} (${HOST_BMC_NAME}) Redfish /Systems has no computer system"
+    response="$(host_bmc_redfish GET "https://${HOST_BMC_IP}${system_path}")"
+    code="$(host_bmc_redfish_code "$response")"
+    body="$(host_bmc_redfish_body "$response")"
+    [[ "$code" =~ ^2 ]] || die "Server BMC ${HOST_BMC_IP} (${HOST_BMC_NAME}) Redfish ${system_path} returned HTTP ${code}"
+    state="$(printf '%s\n' "$body" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("PowerState",""))')"
+    if [[ "$state" == "On" ]]; then
+      log "Server chassis ${HOST_BMC_NAME} (${HOST_BMC_IP}) is already powered on"
+      continue
+    fi
+    reset_path="$(printf '%s\n' "$body" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(((d.get("Actions") or {}).get("#ComputerSystem.Reset") or {}).get("target",""))')"
+    [[ -n "$reset_path" ]] || die "Server BMC ${HOST_BMC_IP} (${HOST_BMC_NAME}) has no Redfish power-on action"
+    log "Powering on server chassis ${HOST_BMC_NAME} (${HOST_BMC_IP}), current state ${state:-unknown}"
+    response="$(host_bmc_redfish POST "https://${HOST_BMC_IP}${reset_path}" '{"ResetType":"On"}')"
+    code="$(host_bmc_redfish_code "$response")"
+    [[ "$code" =~ ^2 ]] || die "Power-on request to server BMC ${HOST_BMC_IP} (${HOST_BMC_NAME}) returned HTTP ${code}"
+    start=$SECONDS
+    while [[ "$state" != "On" ]]; do
+      if ((SECONDS - start >= WAIT_SHORT)); then
+        die "Timed out after ${WAIT_SHORT}s waiting for server chassis ${HOST_BMC_NAME} (${HOST_BMC_IP}) to power on (last state ${state:-unknown})"
+      fi
+      sleep 5
+      response="$(host_bmc_redfish GET "https://${HOST_BMC_IP}${system_path}")"
+      body="$(host_bmc_redfish_body "$response")"
+      state="$(printf '%s\n' "$body" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("PowerState",""))' 2>/dev/null || true)"
+    done
+    log "Server chassis ${HOST_BMC_NAME} (${HOST_BMC_IP}) is powered on"
+  done
+
+  wait_zero_trust_dpu_bmcs_reachable "powering on the server chassis"
+}
+
+# Waits for each statically configured DPU BMC to answer. Used after a
+# chassis power-on or power-cycle. No-op in scanning mode, where BMC IPs
+# aren't known individually, and silently skipped if curl is unavailable.
+wait_zero_trust_dpu_bmcs_reachable() {
+  local after="${1:-the chassis power event}"
+  local serial_var serial bmc_ip start
+
+  [[ "$ZT_DPU_DISCOVERY_MODE" == "static" ]] || return 0
+  command -v curl >/dev/null 2>&1 || return 0
+  log "Waiting up to ${WAIT_MEDIUM}s for each DPU BMC to answer after ${after}"
+  while IFS= read -r serial_var; do
+    serial="${!serial_var}"
+    [[ -n "$serial" ]] || continue
+    bmc_ip="${serial_var%_SERIAL}_BMC_IP"
+    bmc_ip="${!bmc_ip}"
+    start=$SECONDS
+    while ! curl -k -u "root:${ZT_DPU_BMC_ROOT_PASSWORD}" -s -o /dev/null -f \
+      --connect-timeout 5 --max-time 10 \
+      "https://${bmc_ip}/redfish/v1/Systems/Bluefield"; do
+      if ((SECONDS - start >= WAIT_MEDIUM)); then
+        die "DPU ${serial} Redfish endpoint ${bmc_ip} did not answer within ${WAIT_MEDIUM}s of ${after}"
+      fi
+      sleep 10
+    done
+    log "DPU ${serial} Redfish endpoint ${bmc_ip} is reachable"
+  done < <(list_dpu_serial_variables)
+}
+
+# Power-cycles every configured server chassis, regardless of current state.
+# Used to satisfy a DPUNode's external-reboot requirement; see
+# wait_zero_trust_external_reboots. Unlike power_on_zero_trust_hosts, this
+# does not skip chassis that are already on: a cycle is the point.
+power_cycle_zero_trust_hosts() {
+  local host_index response code body system_path reset_path
+  log "Power-cycling ${WORKER_COUNT} server chassis to apply pending DPU firmware config"
+  for ((host_index = 1; host_index <= WORKER_COUNT; host_index++)); do
+    load_host_bmc "$host_index"
+    response="$(host_bmc_redfish GET "https://${HOST_BMC_IP}/redfish/v1/Systems")"
+    code="$(host_bmc_redfish_code "$response")"
+    body="$(host_bmc_redfish_body "$response")"
+    [[ "$code" =~ ^2 ]] || die "Server BMC ${HOST_BMC_IP} (${HOST_BMC_NAME}) Redfish /Systems returned HTTP ${code}"
+    system_path="$(printf '%s\n' "$body" | python3 -c 'import json,sys; d=json.load(sys.stdin); m=d.get("Members") or []; print(m[0].get("@odata.id","") if m else "")')"
+    [[ -n "$system_path" ]] || die "Server BMC ${HOST_BMC_IP} (${HOST_BMC_NAME}) Redfish /Systems has no computer system"
+    response="$(host_bmc_redfish GET "https://${HOST_BMC_IP}${system_path}")"
+    code="$(host_bmc_redfish_code "$response")"
+    body="$(host_bmc_redfish_body "$response")"
+    [[ "$code" =~ ^2 ]] || die "Server BMC ${HOST_BMC_IP} (${HOST_BMC_NAME}) Redfish ${system_path} returned HTTP ${code}"
+    reset_path="$(printf '%s\n' "$body" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(((d.get("Actions") or {}).get("#ComputerSystem.Reset") or {}).get("target",""))')"
+    [[ -n "$reset_path" ]] || die "Server BMC ${HOST_BMC_IP} (${HOST_BMC_NAME}) has no Redfish reset action"
+    log "Power-cycling server chassis ${HOST_BMC_NAME} (${HOST_BMC_IP})"
+    response="$(host_bmc_redfish POST "https://${HOST_BMC_IP}${reset_path}" '{"ResetType":"PowerCycle"}')"
+    code="$(host_bmc_redfish_code "$response")"
+    [[ "$code" =~ ^2 ]] || die "PowerCycle request to server BMC ${HOST_BMC_IP} (${HOST_BMC_NAME}) returned HTTP ${code}"
+  done
+  wait_zero_trust_dpu_bmcs_reachable "the chassis power cycle"
+}
+
+# Names of DPUNodes currently annotated
+# provisioning.dpu.nvidia.com/dpunode-external-reboot-required=true.
+list_zero_trust_external_reboot_pending() {
+  oc get dpunodes.provisioning.dpu.nvidia.com -n dpf-operator-system -o json 2>/dev/null |
+    python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+for item in data.get("items", []):
+    annotations = item.get("metadata", {}).get("annotations") or {}
+    if annotations.get("provisioning.dpu.nvidia.com/dpunode-external-reboot-required") == "true":
+        print(item["metadata"]["name"])
+' 2>/dev/null || true
+}
+
+# Automates the manual step from the README: power-cycle the chassis, then
+# clear the dpunode-external-reboot-required annotation. Every DPUNode shares
+# the same chassis fleet (WORKER_COUNT/BMC_*), so one pending DPUNode powers
+# every chassis rather than trying to map a DPU to the one host it sits in.
+#
+# Without --force, this only acts when ZT_AUTO_POWER_CYCLE=true; otherwise it
+# falls back to printing the manual instructions, unchanged from before this
+# automation existed.
+wait_zero_trust_external_reboots() {
+  local force=false
+  [[ "${1:-}" == "--force" ]] && force=true
+
+  if [[ "$force" != true && "${ZT_AUTO_POWER_CYCLE:-false}" != "true" ]]; then
+    print_zero_trust_next_steps
+    return 0
+  fi
+
+  command -v oc >/dev/null 2>&1 || die "oc is required to automate the Zero Trust external reboot step"
+  log "Watching for DPUs that need an external power cycle (up to ${WAIT_EXTERNAL_REBOOT}s)"
+
+  local start=$SECONDS pending dpu_node handled_any=false
+  while true; do
+    pending="$(list_zero_trust_external_reboot_pending)"
+
+    if [[ -z "$pending" ]]; then
+      if ((SECONDS - start >= WAIT_EXTERNAL_REBOOT)); then
+        log "No DPUNode has requested an external reboot within ${WAIT_EXTERNAL_REBOOT}s; nothing more to do"
+        return 0
+      fi
+      if [[ "$handled_any" == true ]]; then
+        log "No DPUNodes are waiting on an external reboot anymore"
+        return 0
+      fi
+      sleep 15
+      continue
+    fi
+
+    log "DPUNode(s) requesting an external reboot: $(tr '\n' ' ' <<<"$pending")"
+    power_cycle_zero_trust_hosts
+
+    while IFS= read -r dpu_node; do
+      [[ -n "$dpu_node" ]] || continue
+      log "Clearing dpunode-external-reboot-required on ${dpu_node}"
+      oc -n dpf-operator-system annotate dpunode "$dpu_node" \
+        provisioning.dpu.nvidia.com/dpunode-external-reboot-required- --overwrite
+    done <<<"$pending"
+    handled_any=true
+    start=$SECONDS
+  done
+}
+
+# Waits until `oc get <kind> <name> -n dpf-operator-system` succeeds.
+wait_for_named() {
+  local kind="$1" name="$2" timeout_s="$3"
+  local start=$SECONDS
+  log "Waiting up to ${timeout_s}s for ${kind}/${name} in dpf-operator-system"
+  while ! oc get "$kind" "$name" -n dpf-operator-system >/dev/null 2>&1; do
+    if ((SECONDS - start >= timeout_s)); then
+      die "Timed out waiting for ${kind}/${name} in dpf-operator-system"
+    fi
+    sleep 10
+  done
+}
+
+# Publishes the BFB on ZT_BFB_REGISTRY_PORT and tells Redfish to use it.
+# The Service is ours, with a fixed NodePort, and selects the operator's
+# bfb-registry pods. The operator's own Service is left alone: recreating it
+# assigns a new NodePort and would strand an in-progress download.
+configure_zero_trust_bfb_registry() {
+  local api_ip address got endpoint
+  wait_for_named service bfb-registry "$WAIT_MEDIUM"
+  apply_manifest "$(manifest dpf/zero-trust/bfb-registry-nodeport.yaml)"
+  endpoint="$(oc get endpoints bfb-registry-bmc -n dpf-operator-system -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null || true)"
+  [[ -n "$endpoint" ]] || die "Service bfb-registry-bmc has no endpoints. The bfb-registry pod is not ready."
+  api_ip="$(getent ahostsv4 "$HOST_CLUSTER_API" 2>/dev/null | awk 'NR == 1 { print $1 }')"
+  [[ "$api_ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || die "Could not resolve ${HOST_CLUSTER_API} to an IPv4 address for the BFB registry"
+  address="http://${api_ip}:${ZT_BFB_REGISTRY_PORT}"
+  log "Pointing Redfish at the BFB registry ${address}"
+  oc patch dpfoperatorconfig dpfoperatorconfig -n dpf-operator-system --type=merge \
+    -p "{\"spec\":{\"provisioningController\":{\"registry\":{\"loadBalancerAddress\":\"${address}\"}}}}"
+  got="$(oc get dpfoperatorconfig dpfoperatorconfig -n dpf-operator-system -o jsonpath='{.spec.provisioningController.registry.loadBalancerAddress}')"
+  [[ "$got" == "$address" ]] || die "BFB registry address is '${got}', expected '${address}'"
+}
+
+# Applies the DPU inventory (DPUDiscovery for scanning, or DPUDevice+DPUNode
+# per serial for static), then waits for DPF to register each configured DPU
+# and normalizes the DPUNode label DPUDeployment selects on.
+configure_zero_trust_dpu_inventory() {
+  local serial_var serial
+
+  if [[ "$ZT_DPU_DISCOVERY_MODE" == "scanning" ]]; then
+    log "Applying DPUDiscovery ${ZT_DPU_DISCOVERY_NAME} (scanning ${ZT_DPU_BMC_IP_RANGE_START}-${ZT_DPU_BMC_IP_RANGE_END})"
+    apply_manifest "$(manifest dpf/zero-trust/dpudiscovery.yaml)"
+  else
+    log "Applying static Zero Trust DPUDevice/DPUNode inventory"
+    while IFS= read -r serial_var; do
+      serial="${!serial_var}"
+      [[ -n "$serial" ]] || continue
+      use_dpu "$serial_var"
+      apply_manifest "$(manifest dpf/zero-trust/dpudevice.yaml)"
+      apply_manifest "$(manifest dpf/zero-trust/dpunode.yaml)"
+    done < <(list_dpu_serial_variables)
+  fi
+
+  while IFS= read -r serial_var; do
+    serial="${!serial_var}"
+    [[ -n "$serial" ]] || continue
+    wait_for_named dpudevices.provisioning.dpu.nvidia.com "$serial" "$WAIT_MEDIUM"
+    wait_for_named dpunodes.provisioning.dpu.nvidia.com "dpu-node-${serial}" "$WAIT_MEDIUM"
+    log "Normalizing the DPUNode label for dpu-node-${serial}"
+    oc label dpunode.provisioning.dpu.nvidia.com "dpu-node-${serial}" -n dpf-operator-system \
+      feature.node.kubernetes.io/dpu-enabled= --overwrite
+  done < <(list_dpu_serial_variables)
+
+  oc get dpudevices.provisioning.dpu.nvidia.com -n dpf-operator-system
+  oc get dpunodes.provisioning.dpu.nvidia.com -n dpf-operator-system
+}
+
+kube_apiserver_clusteroperator_healthy() {
+  local avail prog degr
+  avail=$(oc get clusteroperator kube-apiserver -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || true)
+  prog=$(oc get clusteroperator kube-apiserver -o jsonpath='{.status.conditions[?(@.type=="Progressing")].status}' 2>/dev/null || true)
+  degr=$(oc get clusteroperator kube-apiserver -o jsonpath='{.status.conditions[?(@.type=="Degraded")].status}' 2>/dev/null || true)
+  [[ "$avail" == "True" && "$prog" == "False" && "$degr" == "False" ]]
+}
+
+# Zero Trust DPUs bootstrap-join the hosted cluster with a kube-apiserver
+# bootstrap token rather than a host-signed CSR. This patch is cluster-wide
+# and triggers a kube-apiserver rollout; it is applied once and left in place.
+apply_zero_trust_bootstrap_auth() {
+  local patch_file enabled
+  patch_file="$(manifest dpf/zero-trust/kube-apiserver-bootstrap-auth.patch.yaml)"
+  enabled=$(oc get kubeapiserver cluster \
+    -o 'jsonpath={.spec.unsupportedConfigOverrides.apiServerArguments.enable-bootstrap-token-auth[0]}' \
+    2>/dev/null || true)
+
+  if [[ "$enabled" == "true" ]]; then
+    log "kube-apiserver bootstrap-token authentication is already enabled"
+    return 0
+  fi
+
+  log "Enabling kube-apiserver bootstrap-token authentication for Zero Trust DPU agents"
+  oc patch kubeapiserver cluster --type=merge --patch-file "$patch_file"
+
+  log "Waiting up to ${WAIT_HOSTED}s for the kube-apiserver ClusterOperator rollout"
+  local start=$SECONDS
+  while ! kube_apiserver_clusteroperator_healthy; do
+    if ((SECONDS - start >= WAIT_HOSTED)); then
+      oc get clusteroperator kube-apiserver || true
+      die "kube-apiserver rollout did not complete after enabling bootstrap-token authentication"
+    fi
+    sleep 15
+  done
+  log "kube-apiserver ClusterOperator is healthy"
+}
+
+# Builds the perDPUValuesYAML block (hostnamePattern + vlan/AS per DPU) that
+# the Zero Trust HBN DPUServiceConfiguration template substitutes via
+# ${DPU_VALUES}. DPU<n> gets VLANs (10+n)/(20+n) and AS 65001+(n*100), e.g.
+# DPU1 -> VLANs 11/21, AS 65101; DPU2 -> VLANs 12/22, AS 65201.
+build_zero_trust_dpu_values() {
+  local serial_var serial index vlan1 vlan2 autonomous_system out=""
+  while IFS= read -r serial_var; do
+    serial="${!serial_var}"
+    [[ -n "$serial" ]] || continue
+    index="${serial_var#DPU}"
+    index="${index%_SERIAL}"
+    vlan1=$((10 + index))
+    vlan2=$((20 + index))
+    autonomous_system=$((65001 + (index * 100)))
+    out+="            - hostnamePattern: \"dpu-node-${serial}*\"
+              values:
+                vlan1: ${vlan1}
+                vlan2: ${vlan2}
+                bgp_autonomous_system: ${autonomous_system}
+"
+  done < <(list_dpu_serial_variables)
+  printf '%s' "$out"
+}
+
+# Best-effort, non-fatal: warns (does not fail preflight) if a configured DPU
+# BMC Redfish endpoint doesn't answer. Skipped for scanning mode, where BMC
+# IPs aren't known individually, and silently skipped if curl is unavailable.
+check_zero_trust_bmc_reachability() {
+  [[ "$ZT_DPU_DISCOVERY_MODE" == "static" ]] || return 0
+  command -v curl >/dev/null 2>&1 || return 0
+
+  local serial_var serial bmc_ip_var bmc_ip
+  while IFS= read -r serial_var; do
+    serial="${!serial_var}"
+    [[ -n "$serial" ]] || continue
+    bmc_ip_var="${serial_var%_SERIAL}_BMC_IP"
+    bmc_ip="${!bmc_ip_var:-}"
+    [[ -n "$bmc_ip" ]] || continue
+    if curl -k -u "root:${ZT_DPU_BMC_ROOT_PASSWORD}" -s -o /dev/null -f \
+      --connect-timeout 5 --max-time 10 \
+      "https://${bmc_ip}/redfish/v1/Systems/Bluefield"; then
+      log "DPU ${serial} Redfish endpoint ${bmc_ip} is reachable"
+    else
+      log "WARNING: DPU ${serial} Redfish endpoint ${bmc_ip} did not answer. 'make dpf' powers on the server chassis before provisioning. Confirm rshim is enabled and the shared root password is correct."
+    fi
+  done < <(list_dpu_serial_variables)
+}
+
+print_zero_trust_next_steps() {
+  local dpu_node
+  local dpu_nodes=()
+  while IFS= read -r dpu_node; do
+    [[ -n "$dpu_node" ]] || continue
+    dpu_nodes+=("$dpu_node")
+  done < <(oc get dpunodes.provisioning.dpu.nvidia.com -n dpf-operator-system \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)
+
+  printf '\n'
+  printf '%s\n' "================================================================================"
+  printf '%s\n' "DPU provisioning is running in the background - manual action may be required"
+  printf '%s\n' "================================================================================"
+  printf '%s\n' "Monitor progress:"
+  printf '%s\n' "  oc get dpu -A -w"
+  printf '\n'
+  printf '%s\n' "For each DPU that reaches the Rebooting phase:"
+  printf '%s\n' "  1. Manually power-cycle the corresponding bare-metal host."
+  printf '%s\n' "  2. After the DPU is back up, clear the external-reboot annotation:"
+  if ((${#dpu_nodes[@]} > 0)); then
+    for dpu_node in "${dpu_nodes[@]}"; do
+      printf '     oc -n dpf-operator-system annotate dpunode %s \\\n' "$dpu_node"
+      printf '       provisioning.dpu.nvidia.com/dpunode-external-reboot-required-\n'
+    done
+  else
+    printf '     oc -n dpf-operator-system annotate dpunode <dpunode-name> \\\n'
+    printf '       provisioning.dpu.nvidia.com/dpunode-external-reboot-required-\n'
+  fi
+  printf '%s\n' "================================================================================"
 }
 
 load_env

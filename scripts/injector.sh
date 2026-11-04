@@ -5,6 +5,11 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 log "Phase: injector"
 require_cmds oc helm
 require_cluster
+
+if is_zero_trust; then
+  die "DPF_DEPLOYMENT_MODE=zero-trust does not deploy the OVN-Kubernetes DPU service, so the VF resource injector is a host-trusted-only operation."
+fi
+
 require_vars OVN_TEMPLATE_CHART_URL OVN_CHART_VERSION
 
 log "Installing OVN-Kubernetes resource injector ${OVN_CHART_VERSION}"

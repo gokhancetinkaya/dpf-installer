@@ -13,14 +13,35 @@ require_vars \
 require_cluster
 check_hypershift
 
+manage_dpu_service_templates=true
+if is_zero_trust; then
+  # Zero Trust supplies its own HBN DPUServiceTemplate
+  # (manifests/dpu-services/zero-trust/dpuservicetemplate.yaml) because it
+  # needs the dual-VRF BGP EVPN chart values, not the operator's default.
+  manage_dpu_service_templates=false
+  log "Zero Trust mode: the operator will not manage DPUServiceTemplates; this installer supplies its own"
+fi
+
 log "Installing dpf-hcp-provisioner ${DPF_HCP_PROVISIONER_VERSION}"
+image_args=()
+if [[ -n "${DPF_HCP_PROVISIONER_IMAGE_REPO:-}" || -n "${DPF_HCP_PROVISIONER_IMAGE_TAG:-}" ]]; then
+  [[ -n "${DPF_HCP_PROVISIONER_IMAGE_REPO:-}" && -n "${DPF_HCP_PROVISIONER_IMAGE_TAG:-}" ]] \
+    || die "Set both DPF_HCP_PROVISIONER_IMAGE_REPO and DPF_HCP_PROVISIONER_IMAGE_TAG"
+  log "Overriding the provisioner image with ${DPF_HCP_PROVISIONER_IMAGE_REPO}:${DPF_HCP_PROVISIONER_IMAGE_TAG}"
+  image_args+=(
+    --set "image.repository=${DPF_HCP_PROVISIONER_IMAGE_REPO}"
+    --set "image.tag=${DPF_HCP_PROVISIONER_IMAGE_TAG}"
+    --set image.pullPolicy=Always
+  )
+fi
 helm_upgrade dpf-hcp-provisioner-operator \
   "$DPF_HCP_PROVISIONER_CHART" \
   --registry-config "$OPENSHIFT_PULL_SECRET" \
   --version "$DPF_HCP_PROVISIONER_VERSION" \
   --namespace dpf-hcp-provisioner-system \
   --create-namespace \
-  --set provisionerConfig.manageDPUServiceTemplates=true \
+  --set provisionerConfig.manageDPUServiceTemplates="$manage_dpu_service_templates" \
+  "${image_args[@]}" \
   --wait \
   --timeout "$HELM_TIMEOUT"
 

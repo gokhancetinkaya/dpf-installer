@@ -6,6 +6,10 @@ log "Phase: workers"
 require_cmds oc envsubst
 require_cluster
 
+if is_zero_trust; then
+  die "DPF_DEPLOYMENT_MODE=zero-trust provisions DPUs directly over Redfish during 'make dpf'; 'make workers' (BareMetalHost) is a host-trusted-only operation."
+fi
+
 if [[ "$WORKER_COUNT" == "0" ]]; then
   log "WORKER_COUNT=0, skipping worker provisioning"
   exit 0

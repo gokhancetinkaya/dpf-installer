@@ -1,0 +1,32 @@
+---
+apiVersion: svc.dpu.nvidia.com/v1alpha1
+kind: DPUServiceIPAM
+metadata:
+  name: zt-pool1
+  namespace: dpf-operator-system
+spec:
+  ipv4Network:
+    network: "${ZT_HBN_POOL1_CIDR}"
+    gatewayIndex: 2
+    prefixSize: 29
+---
+apiVersion: svc.dpu.nvidia.com/v1alpha1
+kind: DPUServiceIPAM
+metadata:
+  name: zt-pool2
+  namespace: dpf-operator-system
+spec:
+  ipv4Network:
+    network: "${ZT_HBN_POOL2_CIDR}"
+    gatewayIndex: 2
+    prefixSize: 29
+---
+apiVersion: svc.dpu.nvidia.com/v1alpha1
+kind: DPUServiceIPAM
+metadata:
+  name: zt-loopback
+  namespace: dpf-operator-system
+spec:
+  ipv4Network:
+    network: "${ZT_HBN_LOOPBACK_CIDR}"
+    prefixSize: 32
