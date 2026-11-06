@@ -75,6 +75,18 @@ make status
 
 `make status` prints nodes, DPF pods, DPUs, DPU services, the hosted provisioner, and BareMetalHosts.
 
+### Skipping phases
+
+To test partial flows where not all prerequisites are present, skip one or more phases with
+`SKIP_PHASES` (comma-separated, matching the phase names from `make help`):
+
+```bash
+make install SKIP_PHASES=preflight
+make install SKIP_PHASES=preflight,platform
+```
+
+Skipped phases are logged but otherwise left untouched; everything else runs as usual.
+
 Each phase can be run on its own, and each one is safe to re-run:
 
 | Target | What it does |

@@ -43,7 +43,11 @@ help:
 		'                  otherwise, or to resume an install left waiting on it.' \
 		'  render          write rendered manifests to generated/manifests' \
 		'  status          read-only summary of nodes, DPUs, and the hosted provisioner' \
-		'  install         preflight through the phases for the selected DPF_DEPLOYMENT_MODE'
+		'  install         preflight through the phases for the selected DPF_DEPLOYMENT_MODE' \
+		'' \
+		'Skip phases (e.g. for testing partial flows without all prerequisites):' \
+		'  make install SKIP_PHASES=preflight' \
+		'  make install SKIP_PHASES=preflight,platform'
 
 check:
 	bash "$(ROOT)scripts/check-render.sh"
