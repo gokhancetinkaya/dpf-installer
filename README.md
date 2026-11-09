@@ -54,6 +54,18 @@ Set `WORKER_COUNT=0` to skip BareMetalHost provisioning. For more than one worke
 
 `.env` is gitignored. It holds pull-secret paths and BMC credentials. Do not commit it.
 
+### Hosted and management OpenShift versions
+
+HyperShift allows the hosted cluster to run a different OpenShift version than the management cluster. `HOSTED_OPENSHIFT_VERSION` in `.env` sets the hosted cluster's version independently of whatever version the management cluster is already running; the installer does not create or upgrade the management cluster.
+
+This bundle (DPF version, BFB/DOCA, the OVN injector chart) has only been tested against specific version pairings. Preflight reads the management cluster's running version and refuses to continue unless the pairing appears in `VERSION_SKEW_MATRIX` in `scripts/lib.sh`:
+
+| Management OpenShift | Tested hosted OpenShift versions |
+| --- | --- |
+| 4.22 | 4.22 |
+
+To add a tested combination, add a row to `VERSION_SKEW_MATRIX` only after NVIDIA/QE have validated that pairing against this bundle's DPF/BFB/OVN-injector versions, and document it here.
+
 Check that the manifests render and the required values are set:
 
 ```bash

@@ -16,6 +16,7 @@ oc get crd nodefeaturediscoveries.nfd.openshift.io >/dev/null \
 oc get ns openshift-machine-api >/dev/null \
   || die "Namespace openshift-machine-api not found. This install expects a bare-metal management cluster."
 check_hypershift
+require_version_skew
 
 if is_zero_trust; then
   log "DPF_DEPLOYMENT_MODE=zero-trust: validating Zero Trust configuration"

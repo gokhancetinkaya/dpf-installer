@@ -97,7 +97,7 @@ trim() {
 MANAGED_VARS=(
   "${ENV_VARS[@]}"
   KUBECONFIG OPENSHIFT_PULL_SECRET SSH_KEY
-  CLUSTER_NAME OPENSHIFT_VERSION WORKER_COUNT
+  CLUSTER_NAME HOSTED_OPENSHIFT_VERSION WORKER_COUNT
   DPU_WORKER_CONFIG_CHART DPU_WORKER_CONFIG_VERSION
   MAINTENANCE_OPERATOR_CHART MAINTENANCE_OPERATOR_VERSION
   DPF_HELM_REPO DPF_VERSION
@@ -142,8 +142,8 @@ apply_derived() {
   if [[ -n "${CLUSTER_NAME:-}" && -n "${BASE_DOMAIN:-}" ]]; then
     : "${HOST_CLUSTER_API:=api.${CLUSTER_NAME}.${BASE_DOMAIN}}"
   fi
-  if [[ -n "${OPENSHIFT_VERSION:-}" ]]; then
-    : "${OCP_RELEASE_IMAGE:=quay.io/openshift-release-dev/ocp-release:${OPENSHIFT_VERSION}-multi}"
+  if [[ -n "${HOSTED_OPENSHIFT_VERSION:-}" ]]; then
+    : "${OCP_RELEASE_IMAGE:=quay.io/openshift-release-dev/ocp-release:${HOSTED_OPENSHIFT_VERSION}-multi}"
   fi
   export HOST_CLUSTER_API OCP_RELEASE_IMAGE
 
@@ -165,6 +165,7 @@ apply_derived() {
     host-trusted | zero-trust) ;;
     *) die "DPF_DEPLOYMENT_MODE must be 'host-trusted' or 'zero-trust' (got '${DPF_DEPLOYMENT_MODE}')" ;;
   esac
+  require_hosted_openshift_version_format
 
   resolve_path_var KUBECONFIG
   resolve_path_var OPENSHIFT_PULL_SECRET
@@ -229,7 +230,7 @@ require_common() {
   require_vars \
     KUBECONFIG OPENSHIFT_PULL_SECRET SSH_KEY \
     CLUSTER_NAME BASE_DOMAIN HOST_CLUSTER_API \
-    OPENSHIFT_VERSION OCP_RELEASE_IMAGE \
+    HOSTED_OPENSHIFT_VERSION OCP_RELEASE_IMAGE \
     VTEP_CIDR NUM_VFS NODES_MTU OVN_MTU \
     DPU_HOST_CIDR FLANNEL_POD_CIDR BFB_URL \
     HOSTED_CLUSTER_NAME CLUSTERS_NAMESPACE ETCD_STORAGE_CLASS HOSTED_CLUSTER_VIP \
@@ -253,6 +254,50 @@ require_common() {
     || die "SSH_KEY does not look like a public key: ${SSH_KEY}"
   [[ "$WORKER_COUNT" =~ ^[0-9]+$ ]] || die "WORKER_COUNT must be a number"
   require_nodes_mtu
+}
+
+# Tested OpenShift version-skew combinations. HyperShift supports running a
+# hosted cluster on a different OCP version than the management cluster, but
+# this installer's bundle (DPF version, BFB/DOCA, the OVN injector chart) has
+# only been validated against the pairs below. Key is the management
+# cluster's major.minor; value is a space-separated list of hosted
+# major.minor versions tested against that management version. Add a row
+# only after NVIDIA/QE validate the combination against this bundle. See the
+# "Hosted and management OpenShift versions" section in README.md.
+declare -A VERSION_SKEW_MATRIX=(
+  ["4.22"]="4.22"
+)
+
+# Reduces a full x.y.z OpenShift version to its major.minor.
+minor_version() {
+  local v="$1" maj min patch
+  IFS='.' read -r maj min patch <<<"$v"
+  printf '%s.%s' "$maj" "$min"
+}
+
+require_hosted_openshift_version_format() {
+  [[ "${HOSTED_OPENSHIFT_VERSION:-}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+    || die "HOSTED_OPENSHIFT_VERSION must be a full OpenShift version x.y.z (got '${HOSTED_OPENSHIFT_VERSION:-}')"
+}
+
+# Confirms the configured hosted cluster version is a tested pairing with the
+# management cluster's running version. Requires oc to already be
+# authenticated against the management cluster (preflight runs this after
+# `oc whoami`).
+require_version_skew() {
+  local mgmt_version mgmt_minor hosted_minor allowed
+  require_hosted_openshift_version_format
+  mgmt_version="$(oc get clusterversion version -o jsonpath='{.status.desired.version}' 2>/dev/null)" \
+    || die "Could not read the management cluster's OpenShift version (oc get clusterversion version)"
+  [[ -n "$mgmt_version" ]] || die "Management cluster OpenShift version is empty"
+  mgmt_minor="$(minor_version "$mgmt_version")"
+  hosted_minor="$(minor_version "$HOSTED_OPENSHIFT_VERSION")"
+  allowed="${VERSION_SKEW_MATRIX[$mgmt_minor]:-}"
+  [[ -n "$allowed" ]] \
+    || die "Management cluster is running OpenShift ${mgmt_version} (${mgmt_minor}), which has no tested hosted-cluster versions in VERSION_SKEW_MATRIX (scripts/lib.sh). See README.md 'Hosted and management OpenShift versions'."
+  [[ " ${allowed} " == *" ${hosted_minor} "* ]] \
+    || die "HOSTED_OPENSHIFT_VERSION=${HOSTED_OPENSHIFT_VERSION} (${hosted_minor}) is not a tested pairing with management cluster OpenShift ${mgmt_version} (${mgmt_minor}). Tested hosted versions for management ${mgmt_minor}: ${allowed}. See README.md 'Hosted and management OpenShift versions'."
+  log "Version skew ok: management OpenShift ${mgmt_version}, hosted OpenShift ${HOSTED_OPENSHIFT_VERSION}"
 }
 
 # NODES_MTU selects which DPUFlavor to apply.
