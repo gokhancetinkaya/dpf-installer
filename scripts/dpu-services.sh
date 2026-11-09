@@ -69,6 +69,10 @@ require_vars \
   OVN_MTU OVN_POD_NETWORK OVN_SERVICE_NETWORK \
   VTEP_CIDR DPU_HOST_CIDR NODES_MTU
 
+if [[ "${KATA_ENABLED:-false}" == "true" ]]; then
+  require_kata_vars
+fi
+compute_sriov_vf_ranges
 apply_manifest "$(manifest dpu-services/nodesriovdevicepluginconfig.yaml)"
 oc get nodesriovdevicepluginconfig -n dpf-operator-system
 apply_manifest "$(manifest "$(dpuflavor_manifest)")"

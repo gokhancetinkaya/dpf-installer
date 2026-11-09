@@ -17,6 +17,9 @@ require_install_vars
 require_vars ZT_BFB_REGISTRY_PORT ZT_CONTROL_PLANE_MTU \
   HBN_HELM_CHART_VERSION HBN_IMAGE_TAG \
   ZT_HBN_POOL1_CIDR ZT_HBN_POOL2_CIDR ZT_HBN_LOOPBACK_CIDR
+# Kata manifests always render below regardless of KATA_ENABLED.
+require_kata_vars
+compute_sriov_vf_ranges
 render_all
 
 for flavor_name in dpuflavor-9000.yaml dpuflavor-1500.yaml; do
@@ -124,6 +127,18 @@ if [[ -n "${DPU1_SERIAL:-}" ]]; then
   [[ -f "${GENERATED_DIR}/dpf/zero-trust/dpudevice.yaml" ]] || die "Zero Trust DPUDevice template was not rendered"
   [[ -f "${GENERATED_DIR}/dpf/zero-trust/dpunode.yaml" ]] || die "Zero Trust DPUNode template was not rendered"
 fi
+
+sriov_config="${GENERATED_DIR}/dpu-services/nodesriovdevicepluginconfig.yaml"
+grep -F -q "end: $((NUM_VFS - 1))" "$sriov_config" || die "NodeSRIOVDevicePluginConfig PF0/PF1 end was not rendered"
+if grep -E '\$\{[A-Z][A-Z0-9_]+\}' "$sriov_config" >/dev/null; then
+  die "NodeSRIOVDevicePluginConfig has an unsubstituted variable"
+fi
+
+runtimeclass="${GENERATED_DIR}/kata/05-runtimeclass.yaml"
+grep -F -q "name: ${KATA_RUNTIME_CLASS}" "$runtimeclass" || die "Kata RuntimeClass name was not rendered"
+
+rhcos_layer="${GENERATED_DIR}/kata/03-rhcos-layer.yaml"
+grep -F -q "osImageURL: ${KATA_RHCOS_LAYER_IMAGE}" "$rhcos_layer" || die "Kata RHCOS layer image was not rendered"
 
 grafana_src="$(manifest observability/grafana-datasource.yaml)"
 grafana_out="${GENERATED_DIR}/observability/grafana-datasource.yaml"

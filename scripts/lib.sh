@@ -65,6 +65,14 @@ ENV_VARS=(
   DPU_SERIAL_NUMBER
   DPU_BMC_IP
   DPU_VALUES
+  KATA_RUNTIME_CLASS
+  KATA_WORKER_ROLE
+  KATA_RHCOS_LAYER_IMAGE
+  KATA_TEST_REPLICAS
+  SRIOV_PF0_REGULAR_START
+  SRIOV_PF0_END
+  SRIOV_PF1_END
+  KATA_SRIOV_POOL
 )
 
 log() {
@@ -102,6 +110,8 @@ MANAGED_VARS=(
   MAINTENANCE_OPERATOR_CHART MAINTENANCE_OPERATOR_VERSION
   DPF_HELM_REPO DPF_VERSION
   OVN_TEMPLATE_CHART_URL OVN_CHART_VERSION
+  KATA_ENABLED KATA_NAD_NAME KATA_INJECTOR_RESOURCE_NAME
+  KATA_NUM_VFS KATA_SRIOV_POOL_NAME KATA_SKIP_RHCOS_LAYER
   DPF_HCP_PROVISIONER_CHART DPF_HCP_PROVISIONER_VERSION \
   DPF_HCP_PROVISIONER_IMAGE_REPO DPF_HCP_PROVISIONER_IMAGE_TAG
   GRAFANA_OPERATOR_CHART GRAFANA_OPERATOR_VERSION
@@ -145,7 +155,13 @@ apply_derived() {
   if [[ -n "${HOSTED_OPENSHIFT_VERSION:-}" ]]; then
     : "${OCP_RELEASE_IMAGE:=quay.io/openshift-release-dev/ocp-release:${HOSTED_OPENSHIFT_VERSION}-multi}"
   fi
-  export HOST_CLUSTER_API OCP_RELEASE_IMAGE
+  : "${KATA_ENABLED:=false}"
+  export HOST_CLUSTER_API OCP_RELEASE_IMAGE KATA_ENABLED
+
+  case "$KATA_ENABLED" in
+    true | false) ;;
+    *) die "KATA_ENABLED must be 'true' or 'false' (got '${KATA_ENABLED}')" ;;
+  esac
 
   require_vars \
     TARGETCLUSTER_API_SERVER_PORT CLUSTERS_NAMESPACE \
@@ -348,9 +364,69 @@ require_install_vars() {
   require_workers
 }
 
+####################################################################
+# Kata helpers
+#
+# Kata support spans three phases: injector (runtime-class mapping on the
+# OVN resource injector webhook), dpu-services (a dedicated SR-IOV VF pool),
+# and kata (OSC operator, KataConfig, MachineConfigs, RuntimeClass). All are
+# host-trusted only. See README.md "Kata support".
+####################################################################
+
+require_kata_vars() {
+  require_vars KATA_RUNTIME_CLASS KATA_NAD_NAME KATA_INJECTOR_RESOURCE_NAME \
+    KATA_NUM_VFS KATA_SRIOV_POOL_NAME KATA_RHCOS_LAYER_IMAGE KATA_TEST_REPLICAS
+  : "${KATA_SKIP_RHCOS_LAYER:=false}"
+  export KATA_SKIP_RHCOS_LAYER
+  case "$KATA_SKIP_RHCOS_LAYER" in
+    true | false) ;;
+    *) die "KATA_SKIP_RHCOS_LAYER must be 'true' or 'false' (got '${KATA_SKIP_RHCOS_LAYER}')" ;;
+  esac
+  [[ "$KATA_NUM_VFS" =~ ^[1-9][0-9]*$ ]] || die "KATA_NUM_VFS must be a positive integer (got '${KATA_NUM_VFS}')"
+  [[ "$KATA_TEST_REPLICAS" =~ ^[0-9]+$ ]] || die "KATA_TEST_REPLICAS must be a non-negative integer (got '${KATA_TEST_REPLICAS}')"
+}
+
+# DPU hosts are in MCP worker-dpu even when the management cluster is SNO.
+kata_worker_role() {
+  if oc get mcp worker-dpu >/dev/null 2>&1; then
+    printf 'worker-dpu\n'
+  else
+    printf 'worker\n'
+  fi
+}
+
+# Splits the regular PF0 VF range to carve out a dedicated Kata pool when
+# KATA_ENABLED=true. Exports SRIOV_PF0_REGULAR_START, SRIOV_PF0_END,
+# SRIOV_PF1_END, and KATA_SRIOV_POOL (a YAML devicePluginResources list item,
+# or empty) for nodesriovdevicepluginconfig.yaml.
+compute_sriov_vf_ranges() {
+  local vf_range_end=$((NUM_VFS - 1))
+  local pf0_regular_start=2
+  KATA_SRIOV_POOL=""
+  if [[ "${KATA_ENABLED:-false}" == "true" ]]; then
+    require_vars KATA_NUM_VFS KATA_SRIOV_POOL_NAME
+    [[ "$KATA_NUM_VFS" =~ ^[1-9][0-9]*$ ]] || die "KATA_NUM_VFS must be a positive integer (got '${KATA_NUM_VFS}')"
+    ((pf0_regular_start + KATA_NUM_VFS < NUM_VFS)) || die "KATA_NUM_VFS (${KATA_NUM_VFS}) must be less than NUM_VFS - ${pf0_regular_start} ($((NUM_VFS - pf0_regular_start)))"
+    local kata_vf_start=$pf0_regular_start
+    local kata_vf_end=$((pf0_regular_start + KATA_NUM_VFS - 1))
+    pf0_regular_start=$((kata_vf_end + 1))
+    log "KATA_ENABLED=true: kata SR-IOV pool ${KATA_SRIOV_POOL_NAME} takes PF0 VFs ${kata_vf_start}-${kata_vf_end}; regular pool PF0 VFs ${pf0_regular_start}-${vf_range_end}"
+    KATA_SRIOV_POOL="- name: ${KATA_SRIOV_POOL_NAME}
+      type: vf
+      ranges:
+        - pfIndex: 0
+          start: ${kata_vf_start}
+          end: ${kata_vf_end}"
+  fi
+  export SRIOV_PF0_REGULAR_START="$pf0_regular_start"
+  export SRIOV_PF0_END="$vf_range_end"
+  export SRIOV_PF1_END="$vf_range_end"
+  export KATA_SRIOV_POOL
+}
+
 is_template() {
   case "$(basename "$1")" in
-    gitops-operator.yaml | nfd-instance.yaml | dpfoperatorconfig.yaml | dpuflavor-9000.yaml | dpuflavor-1500.yaml | bfb.yaml | ovn-k.yaml | dpuservice-nad.yaml | dpuservice-ipam.yaml | dpucluster.yaml | dpfhcpprovisioner.yaml | bmc-secret.yaml | baremetalhost.yaml | bmc-shared-password.yaml | bfb-registry-nodeport.yaml | dpudiscovery.yaml | dpudevice.yaml | dpunode.yaml | dpuflavor.yaml | dpuservicetemplate.yaml | hbn-configuration.yaml)
+    gitops-operator.yaml | nfd-instance.yaml | dpfoperatorconfig.yaml | dpuflavor-9000.yaml | dpuflavor-1500.yaml | bfb.yaml | ovn-k.yaml | dpuservice-nad.yaml | dpuservice-ipam.yaml | dpucluster.yaml | dpfhcpprovisioner.yaml | bmc-secret.yaml | baremetalhost.yaml | bmc-shared-password.yaml | bfb-registry-nodeport.yaml | dpudiscovery.yaml | dpudevice.yaml | dpunode.yaml | dpuflavor.yaml | dpuservicetemplate.yaml | hbn-configuration.yaml | nodesriovdevicepluginconfig.yaml | 03-iommu.yaml | 03-rhcos-layer.yaml | 04-kata-coldplug.yaml | 05-runtimeclass.yaml | 06-test-deployment.yaml)
       return 0
       ;;
     *)

@@ -11,14 +11,15 @@ spec:
         - pfIndex: 0
           start: 1
           end: 1
-    - name: bf3_vfs # Allocates VF 2-45 on PF0 and VF 0-45 on PF1 for workload traffic with RDMA enabled
+    - name: bf3_vfs # Allocates the regular workload VF range on PF0 and VF 0-45 on PF1, with RDMA enabled
       type: vf
       options:
         isRdma: true
       ranges:
         - pfIndex: 0 # first physical function of the BlueField-3 DPU
-          start: 2
-          end: 45
+          start: ${SRIOV_PF0_REGULAR_START}
+          end: ${SRIOV_PF0_END}
         - pfIndex: 1 # second physical function of the BlueField-3 DPU
           start: 0
-          end: 45
+          end: ${SRIOV_PF1_END}
+    ${KATA_SRIOV_POOL}

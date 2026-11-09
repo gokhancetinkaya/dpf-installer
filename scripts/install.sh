@@ -63,4 +63,7 @@ fi
 log ""
 log "DPF install complete."
 log "Optional dashboards: make observability"
+if [[ "${KATA_ENABLED:-false}" == "true" ]]; then
+  log "KATA_ENABLED=true: run Kata DPU cold-plug setup with make kata"
+fi
 log "Current objects: make status"

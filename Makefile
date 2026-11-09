@@ -2,7 +2,7 @@ SHELL := /bin/bash
 ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
 .DEFAULT_GOAL := help
-.PHONY: help check render install preflight platform cluster-prep dpf dpu-services hosted injector workers hosted-scc observability status external-reboot
+.PHONY: help check render install preflight platform cluster-prep dpf dpu-services hosted injector workers kata deploy-kata-test cleanup-kata-vfs hosted-scc observability status external-reboot
 
 help:
 	@printf '%s\n' \
@@ -31,7 +31,15 @@ help:
 		'  hosted          HCP provisioner, secrets, DPUCluster, wait until Ready' \
 		'  injector        OVN-Kubernetes VF resource injector (host-trusted only)' \
 		'  workers         BareMetalHost, CSR approval, hosted SCC, then wait until Ready (host-trusted only)' \
-		'  observability   user-workload monitoring, console dashboard, Grafana' \
+		'' \
+		'Optional (not run by make install; run by hand after install):' \
+		'  kata              OSC operator, KataConfig, MachineConfigs, RuntimeClass for Kata DPU' \
+		'                    cold-plug. Requires KATA_ENABLED=true and a prior make dpu-services' \
+		'                    and make injector (host-trusted only)' \
+		'  deploy-kata-test  deploy the kata-dpu-test smoke-test Deployment (KATA_TEST_REPLICAS)' \
+		'  cleanup-kata-vfs  rebind stale VFIO VFs left behind by Kata pods (FORCE=true to' \
+		'                    override the check for still-running Kata pods)' \
+		'  observability     user-workload monitoring, console dashboard, Grafana' \
 		'' \
 		'Other:' \
 		'  hosted-scc      apply the hosted SCC by itself; make install does this from workers' \
@@ -81,6 +89,15 @@ injector:
 
 workers:
 	bash "$(ROOT)scripts/workers.sh"
+
+kata:
+	bash "$(ROOT)scripts/kata.sh" enable
+
+deploy-kata-test:
+	bash "$(ROOT)scripts/kata.sh" deploy-test
+
+cleanup-kata-vfs:
+	bash "$(ROOT)scripts/kata.sh" cleanup-vfs
 
 hosted-scc:
 	bash "$(ROOT)scripts/hosted-scc.sh"
