@@ -28,6 +28,13 @@ helm_upgrade dpf-operator dpf-repository/dpf-operator \
 
 wait_rollout dpf-operator-system dpf-operator-controller-manager "$WAIT_MEDIUM"
 
+log "Creating dpf-pull-secret for DPF operator image pulls from private registries"
+oc create secret generic dpf-pull-secret \
+  -n dpf-operator-system \
+  --from-file=.dockerconfigjson="${OPENSHIFT_PULL_SECRET}" \
+  --type=kubernetes.io/dockerconfigjson \
+  --dry-run=client -o yaml | oc apply -f -
+
 if is_zero_trust; then
   log "Zero Trust mode: granting the privileged SCC to the DPF default service account"
   oc adm policy add-scc-to-user privileged -z default -n dpf-operator-system

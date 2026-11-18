@@ -4,6 +4,8 @@ metadata:
   name: dpfoperatorconfig
   namespace: dpf-operator-system
 spec:
+  imagePullSecrets:
+    - dpf-pull-secret
   # Zero Trust never trusts the host OS: the host agent, host-based CNI
   # install, and Kamaji-managed cluster membership are all disabled. DPF talks
   # to each DPU directly over Redfish instead (provisioningController below).

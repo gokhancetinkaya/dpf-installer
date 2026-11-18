@@ -85,11 +85,13 @@ while ((worker_index <= WORKER_COUNT)); do
     fi
     if worker_node_ready "$WORKER_NAME"; then
       log "Node ${WORKER_READY_NODE} is Ready"
+      oc label node "${WORKER_READY_NODE}" k8s.ovn.org/dpu-host= --overwrite
       claimed+=" ${WORKER_READY_NODE}"
       break
     fi
     if new_node="$(new_ready_node "${baseline} ${claimed}")"; then
       log "Node ${new_node} is Ready"
+      oc label node "${new_node}" k8s.ovn.org/dpu-host= --overwrite
       claimed+=" ${new_node}"
       break
     fi

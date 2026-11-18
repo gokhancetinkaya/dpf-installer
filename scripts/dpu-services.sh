@@ -73,10 +73,25 @@ if [[ "${KATA_ENABLED:-false}" == "true" ]]; then
   require_kata_vars
 fi
 compute_sriov_vf_ranges
+apply_manifest "$(manifest dpu-services/networkpolicy.yaml)"
 apply_manifest "$(manifest dpu-services/nodesriovdevicepluginconfig.yaml)"
 oc get nodesriovdevicepluginconfig -n dpf-operator-system
 apply_manifest "$(manifest "$(dpuflavor_manifest)")"
 apply_manifest "$(manifest dpu-services/bfb.yaml)"
+
+log "Waiting up to ${WAIT_MEDIUM}s for BFB bf-bundle to become Ready"
+bfb_deadline=$((SECONDS + WAIT_MEDIUM))
+while true; do
+  if [[ "$(oc get bfb bf-bundle -n dpf-operator-system -o jsonpath='{.status.phase}' 2>/dev/null)" == "Ready" ]]; then
+    break
+  fi
+  if ((SECONDS >= bfb_deadline)); then
+    oc get bfb bf-bundle -n dpf-operator-system -o yaml || true
+    die "Timed out waiting for BFB bf-bundle to become Ready"
+  fi
+  sleep 10
+done
+
 apply_manifest "$(manifest dpu-services/dpudeployment.yaml)"
 apply_manifest "$(manifest dpu-services/hbn.yaml)"
 apply_manifest "$(manifest dpu-services/ovn-k.yaml)"
@@ -87,12 +102,5 @@ apply_manifest "$(manifest dpu-services/ovnk-if.yaml)"
 apply_manifest "$(manifest dpu-services/dpuservice-nad.yaml)"
 apply_manifest "$(manifest dpu-services/dpuservice-ipam.yaml)"
 
-log "Waiting for DPU service IPAM and interfaces"
-oc wait --for=condition=DPUIPAMObjectReconciled \
-  --namespace dpf-operator-system dpuserviceipam --all \
-  --timeout="${WAIT_CONDITIONS}s"
-oc wait --for=condition=ServiceInterfaceSetReconciled \
-  --namespace dpf-operator-system dpuserviceinterface --all \
-  --timeout="${WAIT_CONDITIONS}s"
 oc get dpuserviceconfiguration -n dpf-operator-system
-log "DPU services configured"
+log "DPU services configured — IPAM and interface reconciliation complete once worker nodes join"

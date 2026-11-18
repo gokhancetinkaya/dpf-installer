@@ -4,6 +4,8 @@ metadata:
   name: dpfoperatorconfig
   namespace: dpf-operator-system
 spec:
+  imagePullSecrets:
+    - dpf-pull-secret
   kamajiClusterManager:
     disable: true
   multus:

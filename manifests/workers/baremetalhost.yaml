@@ -5,6 +5,7 @@ metadata:
   namespace: openshift-machine-api
 spec:
   online: true
+  inspectionMode: disabled
   bootMACAddress: ${BOOT_MAC}
   rootDeviceHints:
     deviceName: ${ROOT_DEVICE}

@@ -10,11 +10,12 @@ spec:
       values:
         global:
           enableOvnKubeIdentity: false
+          imagePullSecretName: "dpf-pull-secret"
         k8sAPIServer: https://${HOST_CLUSTER_API}:${TARGETCLUSTER_API_SERVER_PORT}
         podNetwork: ${OVN_POD_NETWORK}
         serviceNetwork: ${OVN_SERVICE_NETWORK}
         hostNetworkNamespace: "openshift-host-network"
-        mtu: ${OVN_MTU}
+        mtu: ${NODES_MTU}
         dpuManifests:
           kubernetesSecretName: "ovn-dpu"
           vtepCIDR: ${VTEP_CIDR}

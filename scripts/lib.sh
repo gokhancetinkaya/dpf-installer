@@ -36,6 +36,7 @@ ENV_VARS=(
   CLUSTERS_NAMESPACE
   ETCD_STORAGE_CLASS
   OCP_RELEASE_IMAGE
+  HOSTED_CONTROL_PLANE_AVAILABILITY
   PULL_SECRET_NAME
   SSH_KEY_SECRET_NAME
   HOSTED_CLUSTER_VIP
@@ -1023,19 +1024,19 @@ wait_for_named() {
 # bfb-registry pods. The operator's own Service is left alone: recreating it
 # assigns a new NodePort and would strand an in-progress download.
 configure_zero_trust_bfb_registry() {
-  local api_ip address got endpoint
+  local api_ip bfb_registry_address got endpoint
   wait_for_named service bfb-registry "$WAIT_MEDIUM"
   apply_manifest "$(manifest dpf/zero-trust/bfb-registry-nodeport.yaml)"
   endpoint="$(oc get endpoints bfb-registry-bmc -n dpf-operator-system -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null || true)"
   [[ -n "$endpoint" ]] || die "Service bfb-registry-bmc has no endpoints. The bfb-registry pod is not ready."
   api_ip="$(getent ahostsv4 "$HOST_CLUSTER_API" 2>/dev/null | awk 'NR == 1 { print $1 }')"
   [[ "$api_ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || die "Could not resolve ${HOST_CLUSTER_API} to an IPv4 address for the BFB registry"
-  address="http://${api_ip}:${ZT_BFB_REGISTRY_PORT}"
-  log "Pointing Redfish at the BFB registry ${address}"
+  bfb_registry_address="${api_ip}:${ZT_BFB_REGISTRY_PORT}"
+  log "Pointing Redfish at the BFB registry ${bfb_registry_address}"
   oc patch dpfoperatorconfig dpfoperatorconfig -n dpf-operator-system --type=merge \
-    -p "{\"spec\":{\"provisioningController\":{\"registry\":{\"loadBalancerAddress\":\"${address}\"}}}}"
-  got="$(oc get dpfoperatorconfig dpfoperatorconfig -n dpf-operator-system -o jsonpath='{.spec.provisioningController.registry.loadBalancerAddress}')"
-  [[ "$got" == "$address" ]] || die "BFB registry address is '${got}', expected '${address}'"
+    -p "{\"spec\":{\"provisioningController\":{\"installInterface\":{\"installViaRedfish\":{\"bfbRegistryAddress\":\"${bfb_registry_address}\",\"bfbRegistry\":{\"port\":${ZT_BFB_REGISTRY_PORT}}}}}}}"
+  got="$(oc get dpfoperatorconfig dpfoperatorconfig -n dpf-operator-system -o jsonpath='{.spec.provisioningController.installInterface.installViaRedfish.bfbRegistryAddress}')"
+  [[ "$got" == "$bfb_registry_address" ]] || die "BFB registry address is '${got}', expected '${bfb_registry_address}'"
 }
 
 # Applies the DPU inventory (DPUDiscovery for scanning, or DPUDevice+DPUNode

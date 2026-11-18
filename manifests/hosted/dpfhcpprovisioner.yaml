@@ -17,4 +17,5 @@ spec:
     name: ${PULL_SECRET_NAME}
   sshKeySecretRef:
     name: ${SSH_KEY_SECRET_NAME}
+  controlPlaneAvailabilityPolicy: ${HOSTED_CONTROL_PLANE_AVAILABILITY}
   virtualIP: ${HOSTED_CLUSTER_VIP}
