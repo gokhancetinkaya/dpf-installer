@@ -237,6 +237,43 @@ reports a port count other than two. Hosts whose BMC does not expose these
 inventories, or that cannot be reached, fall back to the same check against
 DPF discovery in the workers phase.
 
+## Standalone DPU hardware validation
+
+`scripts/dpu-test.sh` is a self-contained tool for validating BlueField DPUs
+on a plain Linux test bench (e.g. a RHEL host installed outside any cluster).
+Copy it to the host and run it as root:
+
+```bash
+scp scripts/dpu-test.sh root@<host>:
+ssh root@<host> ./dpu-test.sh
+```
+
+It prints a PASS/FAIL verdict per installed DPU: PCIe presence, NIC firmware
+initialization (the `probe ... error -110` signature of a dead DPU), port
+count and link status, and the rshim mapping. Plain ConnectX NICs are detected
+and skipped. It is non-destructive by default.
+
+With `--reflash` (optionally a BFB path or URL, defaulting to the installer's
+BFB) it also streams the BFB to each DPU and judges the hardware from the
+boot-chain signatures on the captured console: a completed chain
+(BL2 -> UEFI -> eMMC probed -> kernel) passes, `eMMC access fail` or a stalled
+chain fails. The OS install itself does not complete without a DPF cfg — the
+BFB drops to an emergency shell waiting for ignition — which is expected on a
+standalone bench and is not a failure. The console also carries the boot-ROM
+SKU lines (part number, DDR size, core count), which the tool prints per DPU.
+With `--reflash --force` the push also targets firmware-dead DPUs as an
+ARM-side boot-chain test: it cannot revive the NIC firmware, but a full boot
+chain on the console isolates the failure to the NIC side, which is exactly
+the evidence an RMA case needs.
+
+The tool bootstraps rshim itself: it installs the RHEL `rshim` AppStream
+package (which also provides `bfb-install`), pins the rshim-to-PCI mapping in
+`/etc/rshim.conf`, and starts the daemon directly — the stock systemd unit
+fails under SELinux, so re-run the tool after a host reboot to restart it.
+
+For a failed DPU, the tool's output (plus the `--reflash` console log under
+`/tmp/dpu-test-*`) is the evidence for an RMA case.
+
 ## Layout
 
 - `manifests/` holds the manifests. Files that contain `${VAR}` are rendered with `envsubst` at apply time.
