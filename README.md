@@ -227,6 +227,16 @@ runs the same automation by itself at any time, independent of
 `ZT_AUTO_POWER_CYCLE`, if you want to trigger it on demand instead of
 re-running `make install`.
 
+## Supported DPU hardware
+
+The DPF documentation supports exactly one dual-port BlueField-3 DPU (B3240,
+B3220, or B3210) per worker node. Preflight queries each configured worker's
+BMC over Redfish and fails before anything is installed when the PCIe
+inventory lists more than one BlueField-3 or the network adapter inventory
+reports a port count other than two. Hosts whose BMC does not expose these
+inventories, or that cannot be reached, fall back to the same check against
+DPF discovery in the workers phase.
+
 ## Layout
 
 - `manifests/` holds the manifests. Files that contain `${VAR}` are rendered with `envsubst` at apply time.

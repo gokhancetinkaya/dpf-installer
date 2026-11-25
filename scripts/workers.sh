@@ -58,17 +58,30 @@ dpu_watch_pid=$!
 
 baseline="$(oc get nodes -o jsonpath='{range .items[*]}{.metadata.name}{" "}{end}' 2>/dev/null || true)"
 claimed=""
-scc_applied=0
 script_dir="$(dirname "${BASH_SOURCE[0]}")"
+
+# Apply the hosted-cluster privileged SCC binding before waiting for
+# anything: the DOCA DPU-service DaemonSets are rejected by OpenShift SCC
+# admission without it, so the DPU node can never become Ready. This must
+# not depend on worker node detection, which fails on customDeploy BMHs
+# with introspection disabled (the BMH hostname stays empty). Idempotent.
+"${script_dir}/hosted-scc.sh"
+
 worker_index=1
 while ((worker_index <= WORKER_COUNT)); do
   use_worker "$worker_index"
   log "Waiting up to ${WORKER_JOIN_TIMEOUT}s for ${WORKER_NAME} to join"
   join_deadline=$((SECONDS + WORKER_JOIN_TIMEOUT))
+  deadline_extended=0
+  node_ready_logged=0
+  dpu_wait_logged=0
   last_state=""
   last_hostname=""
   while true; do
     approve_pending_csrs
+    # Fail fast when the discovered hardware is outside the supported
+    # envelope: more than one DPU per node, or a non-dual-port DPU.
+    validate_dpu_hardware
     state="$(oc get bmh "$WORKER_NAME" -n openshift-machine-api -o jsonpath='{.status.provisioning.state}' 2>/dev/null || true)"
     hostname="$(oc get bmh "$WORKER_NAME" -n openshift-machine-api -o jsonpath='{.status.hardware.hostname}' 2>/dev/null || true)"
     if [[ "$state" != "$last_state" || "$hostname" != "$last_hostname" ]]; then
@@ -76,33 +89,49 @@ while ((worker_index <= WORKER_COUNT)); do
       last_state="$state"
       last_hostname="$hostname"
     fi
-    if [[ "$scc_applied" == "0" ]] && find_worker_node "$WORKER_NAME" >/dev/null; then
-      log "Worker node has joined. Applying dpu-cluster-scc.yaml on the hosted cluster before waiting for Ready."
-      "${script_dir}/hosted-scc.sh"
-      scc_applied=1
+    if [[ "$deadline_extended" == "0" ]] && [[ "$state" == "provisioned" ]]; then
+      deadline_extended=1
       join_deadline=$((SECONDS + DPU_READY_TIMEOUT))
-      log "Hosted SCC applied. Waiting up to ${DPU_READY_TIMEOUT}s for the DPU and worker node to become Ready."
+      log "BareMetalHost ${WORKER_NAME} is provisioned. Waiting up to ${DPU_READY_TIMEOUT}s for the worker node and its DPUs to become Ready."
     fi
     if worker_node_ready "$WORKER_NAME"; then
-      log "Node ${WORKER_READY_NODE} is Ready"
-      oc label node "${WORKER_READY_NODE}" k8s.ovn.org/dpu-host= --overwrite
+      if [[ "$node_ready_logged" == "0" ]]; then
+        node_ready_logged=1
+        log "Node ${WORKER_READY_NODE} is Ready"
+        oc label node "${WORKER_READY_NODE}" k8s.ovn.org/dpu-host= --overwrite 2>/dev/null || true
+      fi
       claimed+=" ${WORKER_READY_NODE}"
-      break
+      # Do not finish on node readiness alone: the DPU can still be
+      # provisioning, and exiting would leave it unwatched.
+      if dpus_all_ready; then
+        break
+      elif [[ "$dpu_wait_logged" == "0" ]]; then
+        dpu_wait_logged=1
+        log "Node is Ready; waiting for its DPUs to become Ready as well"
+      fi
     fi
     if new_node="$(new_ready_node "${baseline} ${claimed}")"; then
-      log "Node ${new_node} is Ready"
-      oc label node "${new_node}" k8s.ovn.org/dpu-host= --overwrite
+      if [[ "$node_ready_logged" == "0" ]]; then
+        node_ready_logged=1
+        log "Node ${new_node} is Ready"
+        oc label node "${new_node}" k8s.ovn.org/dpu-host= --overwrite 2>/dev/null || true
+      fi
       claimed+=" ${new_node}"
-      break
+      if dpus_all_ready; then
+        break
+      elif [[ "$dpu_wait_logged" == "0" ]]; then
+        dpu_wait_logged=1
+        log "Node is Ready; waiting for its DPUs to become Ready as well"
+      fi
     fi
     if ((SECONDS >= join_deadline)); then
       oc get bmh "$WORKER_NAME" -n openshift-machine-api || true
       oc get nodes || true
       oc get csr -o go-template='{{range .items}}{{if not .status}}{{.metadata.name}} {{.spec.signerName}} {{.spec.username}}{{"\n"}}{{end}}{{end}}' || true
-      if [[ "$scc_applied" == "1" ]]; then
-        die "Timed out after ${DPU_READY_TIMEOUT}s waiting for ${WORKER_NAME} to become Ready after the hosted SCC was applied. Re-run 'make workers'."
+      if [[ "$deadline_extended" == "1" ]]; then
+        die "Timed out after ${DPU_READY_TIMEOUT}s waiting for ${WORKER_NAME} and its DPUs to become Ready. Re-run 'make workers'."
       fi
-      die "Timed out waiting for a Ready node for ${WORKER_NAME}. Re-run 'make workers' to keep approving CSRs."
+      die "Timed out waiting for ${WORKER_NAME} to be provisioned and join. Re-run 'make workers' to keep approving CSRs."
     fi
     sleep 20
   done

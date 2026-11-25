@@ -50,7 +50,7 @@ ovn="${GENERATED_DIR}/dpu-services/ovn-k.yaml"
 grep -F -q "https://${HOST_CLUSTER_API}:${TARGETCLUSTER_API_SERVER_PORT}" "$ovn" || die "OVN API server was not rendered"
 grep -F -q "vtepCIDR: ${VTEP_CIDR}" "$ovn" || die "OVN VTEP CIDR was not rendered"
 grep -F -q "hostCIDR: ${DPU_HOST_CIDR}" "$ovn" || die "OVN host CIDR was not rendered"
-grep -F -q "mtu: ${NODES_MTU}" "$ovn" || die "OVN MTU was not rendered"
+grep -F -q "mtu: ${OVN_MTU}" "$ovn" || die "OVN MTU was not rendered"
 grep -F -q "podNetwork: ${OVN_POD_NETWORK}" "$ovn" || die "OVN pod network was not rendered"
 
 provisioner="${GENERATED_DIR}/hosted/dpfhcpprovisioner.yaml"

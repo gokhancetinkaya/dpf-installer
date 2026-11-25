@@ -19,6 +19,7 @@ ENV_VARS=(
   HOST_CLUSTER_API
   BASE_DOMAIN
   NODES_MTU
+  OVN_MTU
   TARGETCLUSTER_API_SERVER_PORT
   FLANNEL_POD_CIDR
   NUM_VFS
@@ -394,6 +395,145 @@ kata_worker_role() {
   else
     printf 'worker\n'
   fi
+}
+
+# Fails when the discovered DPU hardware is outside the envelope the NVIDIA
+# DPF Operator documentation supports: exactly one dual-port BlueField-3 DPU
+# (B3240, B3220, or B3210) per worker node. Multi-DPU hosts are documented
+# as not supported, and single-port SKUs (e.g. B3140L) are not in the
+# supported model list. No-op when nothing is discovered yet: fresh installs
+# have no DPUDevices at preflight or render time, so the workers phase runs
+# this continuously, where discovery first appears.
+validate_dpu_hardware() {
+  local out line name node ports
+  local -A per_node=()
+  command -v oc >/dev/null 2>&1 || return 0
+  out="$(oc get dpudevices -n dpf-operator-system \
+    -o jsonpath='{range .items[*]}{.metadata.name}={.metadata.labels.provisioning\.dpu\.nvidia\.com/dpunode-name}={.metadata.labels.provisioning\.dpu\.nvidia\.com/dpudevice-num-of-pfs}{"\n"}{end}' 2>/dev/null)" || return 0
+  [[ -n "$out" ]] || return 0
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    name="${line%%=*}"
+    line="${line#*=}"
+    node="${line%%=*}"
+    ports="${line##*=}"
+    per_node["$node"]=$(( ${per_node["$node"]:-0} + 1 ))
+    if [[ "$ports" != "2" ]]; then
+      die "DPU ${name} on node ${node} reports ${ports:-an unknown} port count (dpudevice-num-of-pfs). Only dual-port BlueField-3 DPUs are supported (B3240, B3220, or B3210); single-port SKUs such as B3140L are outside the supported model list. Replace the DPU with a supported model."
+    fi
+  done <<<"$out"
+  for node in "${!per_node[@]}"; do
+    if (( per_node["$node"] > 1 )); then
+      die "Node ${node} has ${per_node["$node"]} discovered DPUs. The DPF documentation requires exactly one DPU per worker node (multi-DPU hosts are not supported). Remove the extra DPUs from this host."
+    fi
+  done
+  return 0
+}
+
+# Pre-install DPU hardware check through a worker's BMC (Redfish). The DPF
+# documentation supports exactly one dual-port BlueField-3 DPU (B3240, B3220,
+# or B3210) per worker node, so this fails before anything is installed when
+# the BMC's PCIe inventory lists more than one BlueField-3 (it counts
+# physically present DPUs, including faulty ones) or the network adapter
+# inventory reports a port count other than two. Best effort: skipped with
+# a warning when curl is unavailable, the BMC is unreachable, or it does not
+# expose these Redfish inventories; the workers phase enforces the same
+# rules against DPF discovery as the backstop. Read failures of any kind
+# (BMC unreachable, rejected credentials, missing or partially unreadable
+# inventories) never abort the install: they log a warning and skip. Only
+# positive evidence of unsupported hardware fails preflight.
+check_dpu_hardware_bmc() {
+  local bmc_ip="$1" bmc_user="$2" bmc_password="$3"
+  command -v curl >/dev/null 2>&1 || { log "WARNING: curl not found; skipping the BMC DPU hardware check"; return 0; }
+  local rf=(-s -k -f -u "${bmc_user}:${bmc_password}" --connect-timeout 5 --max-time 15)
+  local out chassis_list candidate detail ch="" pcie_col dev id bus buses="" count=0
+  local adapters adapter ports serial dev_failed=0 adapter_failed=0
+  out="$(curl "${rf[@]}" "https://${bmc_ip}/redfish/v1/Chassis" 2>/dev/null)" || true
+  if [[ -z "$out" ]]; then
+    log "WARNING: BMC ${bmc_ip} did not answer Redfish (unreachable, or the credentials were rejected); skipping the BMC DPU hardware check"
+    return 0
+  fi
+  chassis_list="$(grep -o '"/redfish/v1/Chassis/[^"?]*"' <<<"$out" | tr -d '"')"
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] || continue
+    if pcie_col="$(curl "${rf[@]}" "https://${bmc_ip}${candidate}/PCIeDevices" 2>/dev/null)" \
+      && grep -q '/PCIeDevices/' <<<"$pcie_col"; then
+      ch="$candidate"
+      break
+    fi
+  done <<<"$chassis_list"
+  if [[ -z "$ch" ]]; then
+    log "WARNING: BMC ${bmc_ip} does not expose a Redfish PCIe inventory; skipping the BMC DPU hardware check"
+    return 0
+  fi
+  # One BlueField-3 per PCIe function group (bus prefix of the device id).
+  while IFS= read -r dev; do
+    [[ -n "$dev" ]] || continue
+    if ! detail="$(curl "${rf[@]}" "https://${bmc_ip}${dev}" 2>/dev/null)"; then
+      dev_failed=1
+      continue
+    fi
+    grep -qi 'bluefield' <<<"$detail" || continue
+    id="${dev##*/}"
+    bus="${id%-*}"
+    if [[ " $buses " != *" $bus "* ]]; then
+      buses+=" $bus"
+      count=$((count + 1))
+    fi
+  done < <(grep -o '"/redfish/v1/Chassis/[^"]*/PCIeDevices/[^"]*"' <<<"$pcie_col" | tr -d '"')
+  if (( dev_failed )); then
+    log "WARNING: the PCIe inventory of BMC ${bmc_ip} could not be read completely; the DPU count may be understated and the workers phase re-verifies it"
+    (( count > 0 )) || return 0
+  fi
+  if (( count == 0 )); then
+    die "The PCIe inventory of BMC ${bmc_ip} lists no BlueField DPU. This install expects exactly one dual-port BlueField-3 per worker node."
+  fi
+  if (( count > 1 )); then
+    die "The PCIe inventory of BMC ${bmc_ip} lists ${count} BlueField DPUs. The DPF documentation requires exactly one DPU per worker node (multi-DPU hosts are not supported). Remove the extra DPUs."
+  fi
+  adapters="$(curl "${rf[@]}" "https://${bmc_ip}${ch}/NetworkAdapters" 2>/dev/null)" || true
+  if [[ -z "$adapters" ]] || ! grep -q '/NetworkAdapters/' <<<"$adapters"; then
+    log "WARNING: BMC ${bmc_ip} does not expose a Redfish network adapter inventory; the workers phase verifies the port count"
+    return 0
+  fi
+  while IFS= read -r adapter; do
+    [[ -n "$adapter" ]] || continue
+    if ! detail="$(curl "${rf[@]}" "https://${bmc_ip}${adapter}" 2>/dev/null)"; then
+      adapter_failed=1
+      continue
+    fi
+    grep -qi 'bluefield' <<<"$detail" || continue
+    # The adapter document (one JSON line) carries the port count and the
+    # DPU serial number; no second fetch is needed.
+    ports="$(grep -o '"NetworkPorts@odata.count": *[0-9]*' <<<"$detail" | grep -o '[0-9]*$')"
+    serial="$(grep -o '"SerialNumber": *"[^"]*"' <<<"$detail" | head -1 | cut -d'"' -f4 | tr -d ' ')"
+    if [[ -z "$ports" ]]; then
+      log "WARNING: BMC ${bmc_ip} does not report a port count for its BlueField-3; the workers phase verifies it"
+      return 0
+    fi
+    if [[ "$ports" != "2" ]]; then
+      die "The BlueField-3 in the inventory of BMC ${bmc_ip} reports ${ports} network port(s). Only dual-port BlueField-3 DPUs (B3240, B3220, or B3210) are supported; single-port SKUs such as B3140L are outside the supported model list."
+    fi
+    log "BMC ${bmc_ip}: one dual-port BlueField-3 DPU confirmed${serial:+ (serial ${serial})}"
+    return 0
+  done < <(grep -o '"/redfish/v1/Chassis/[^"]*/NetworkAdapters/[^"]*"' <<<"$adapters" | tr -d '"')
+  if (( adapter_failed )); then
+    log "WARNING: the network adapter inventory of BMC ${bmc_ip} could not be read completely; the workers phase verifies the port count"
+    return 0
+  fi
+  die "The BlueField-3 in BMC ${bmc_ip} is present in the PCIe inventory but does not report as a functional network adapter; it is likely faulty. Check or replace the DPU."
+}
+
+# Returns 0 when at least one DPU exists in dpf-operator-system and every one
+# of them is Ready.
+dpus_all_ready() {
+  local phases p
+  phases="$(oc get dpu -n dpf-operator-system -o jsonpath='{.items[*].status.phase}' 2>/dev/null || true)"
+  [[ -n "$phases" ]] || return 1
+  for p in $phases; do
+    [[ "$p" == "Ready" ]] || return 1
+  done
+  return 0
 }
 
 # Splits the regular PF0 VF range to carve out a dedicated Kata pool when

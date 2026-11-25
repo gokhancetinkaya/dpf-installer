@@ -15,7 +15,7 @@ spec:
         podNetwork: ${OVN_POD_NETWORK}
         serviceNetwork: ${OVN_SERVICE_NETWORK}
         hostNetworkNamespace: "openshift-host-network"
-        mtu: ${NODES_MTU}
+        mtu: ${OVN_MTU}
         dpuManifests:
           kubernetesSecretName: "ovn-dpu"
           vtepCIDR: ${VTEP_CIDR}
